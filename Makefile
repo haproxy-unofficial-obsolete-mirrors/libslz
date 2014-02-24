@@ -21,7 +21,6 @@ BINS       := exp-lm
 OBJS       :=
 OBJS       += $(patsubst %.c,%.o,$(wildcard src/*.c))
 OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
-OBJS       += $(EBTREE_DIR)/ebtree.o $(EBTREE_DIR)/eb32tree.o
 
 all: $(BINS)
 

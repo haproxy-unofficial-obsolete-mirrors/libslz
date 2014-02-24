@@ -5,19 +5,15 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <eb32tree.h>
-
 struct ref {
-	struct eb32_node node;
-	unsigned int pos; /* pos of next byte after match */
+	unsigned short pos; /* pos of next byte after match, 0 = unassigned */
 };
 
 char *buffer;
 int bufsize = 16384;
 int buflen;
 
-struct ref *refs;
-struct eb_root root = EB_ROOT_UNIQUE;
+struct ref refs[65536];
 
 static inline int memmatch(const char *a, const char *b, int max)
 {
@@ -27,7 +23,7 @@ static inline int memmatch(const char *a, const char *b, int max)
 	return len;
 }
 
-/* does 10.9 MB/s on non-compressible data, 35 MB/s on HTML.
+/* does 306 MB/s on non-compressible data, 230 MB/s on HTML.
  * gzip does 33 MB/s on non-compressible data.
  */
 void encode(char *in, int ilen)
@@ -39,33 +35,34 @@ void encode(char *in, int ilen)
 	struct ref *ref;
 	int mlen;
 
-#define MINBYTES 3
+#define MINBYTES 2
 	//printf("len = %d\n", ilen);
 	while (rem >= MINBYTES) {
 		word &= 0xFFFFFFFF >> ((5 - MINBYTES) * 8);
-		word = (word << 8) + in[pos++];
+		word = (word << 8) + (unsigned char)in[pos++];
+		ref = refs + word;
+		__builtin_prefetch(ref);
 		rem--;
 		bytes++;
 		if (bytes >= MINBYTES) {
-			/*refs are indexed on the first byte *after* the key */
-			refs[pos].node.key = word;
-			refs[pos].pos = pos;
-			//eb32_delete(&refs[pos].node);
-			ref = (void *)eb32_insert(&root, &refs[pos].node);
-			if (ref != &refs[pos]) {
+			/* refs are indexed on the first byte *after* the key */
+			if (ref->pos) {
 				/* found a matching entry */
 				mlen = memmatch(in + pos, in + ref->pos, rem);
-				printf("found [%d]:0x%06x == [%d]:0x%06x (+%d bytes)\n",
-				       pos - MINBYTES, word,
-				       ref->pos, ref->node.key,
-				       mlen);
+				if (mlen < 1)
+					goto tooshort;
+				//printf("found [%d]:0x%06x == [%d] (+%d bytes)\n",
+				//       pos - MINBYTES, word,
+				//       ref->pos, mlen);
 				ref->pos = pos;
 				pos += mlen;
 				rem -= mlen;
 				bytes = 0;
 			}
 			else {
-				printf("litteral [%d]:%02x\n", pos - MINBYTES, word >> (8 * (MINBYTES - 1)));
+			tooshort:
+				ref->pos = pos;
+				//printf("litteral [%d]:%02x\n", pos - MINBYTES, word >> (8 * (MINBYTES - 1)));
 				bytes--;
 			}
 		}
@@ -88,9 +85,6 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	/* one ref per input byte in the worst case */
-	refs = calloc(sizeof(*refs), bufsize);
-
 	buflen = read(0, buffer, bufsize);
 	if (buflen < 0) {
 		perror("read");
@@ -98,9 +92,8 @@ int main(int argc, char **argv)
 	}
 
 	while (loops--) {
+		memset(refs, 0, sizeof(refs));
 		encode(buffer, buflen);
-		memset(refs, 0, bufsize * sizeof(*refs));
-		root = EB_ROOT_UNIQUE;
 	}
 	return 0;
 }
