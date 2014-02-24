@@ -7,6 +7,7 @@
 
 struct ref {
 	unsigned short pos; /* pos of next byte after match, 0 = unassigned */
+	unsigned short pos2; /* pos of next byte after match, 0 = unassigned */
 };
 
 char *buffer;
@@ -47,21 +48,32 @@ void encode(char *in, int ilen)
 		if (bytes >= MINBYTES) {
 			/* refs are indexed on the first byte *after* the key */
 			if (ref->pos) {
+				int mlen2;
+
 				/* found a matching entry */
 				mlen = memmatch(in + pos, in + ref->pos, rem);
+
+				if (mlen < 4 && ref->pos2 &&
+				    (mlen2 = memmatch(in + pos, in + ref->pos2, rem)) >= mlen) {
+					ref->pos = ref->pos2;
+					mlen = mlen2;
+				}
+
 				if (mlen < 1)
 					goto tooshort;
+
 				//printf("found [%d]:0x%06x == [%d] (+%d bytes)\n",
 				//       pos - MINBYTES, word,
 				//       ref->pos, mlen);
-				ref->pos = pos;
+				ref->pos2 = pos;
 				pos += mlen;
 				rem -= mlen;
 				bytes = 0;
 			}
 			else {
 			tooshort:
-				ref->pos = pos;
+				ref->pos = ref->pos2;
+				ref->pos2 = pos;
 				//printf("litteral [%d]:%02x\n", pos - MINBYTES, word >> (8 * (MINBYTES - 1)));
 				bytes--;
 			}
