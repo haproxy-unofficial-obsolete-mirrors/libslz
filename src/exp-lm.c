@@ -34,6 +34,31 @@ static inline int memmatch(const char *a, const char *b, int max)
 
 	for (len = 0; len < max && a[len] == b[len]; len++);
 	return len;
+
+	//const char *end = a + max;
+	//
+	//while (a <= end - 4) {
+	//	if (*(uint32_t *)a != *(uint32_t *)b)
+	//		break;
+	//	b += 4;
+	//	a += 4;
+	//}
+	//
+	//while (a <= end - 1) {
+	//	if (*a != *b)
+	//		break;
+	//	b++;
+	//	a++;
+	//}
+	//return a - (end - max);
+
+	//len = 0;
+	//while (len <= max - 4 && *(uint32_t *)(a+len) == *(uint32_t *)(b+len))
+	//	len += 4;
+	////while (*(uint32_t *)(a+len) == *(uint32_t *)(b+len) && (len += 4) <= max - 4);
+	//while (len < max && a[len] == b[len])
+	//	len++;
+	//return len;
 }
 
 /* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
