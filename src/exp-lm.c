@@ -32,7 +32,15 @@ static inline int memmatch(const char *a, const char *b, int max)
 {
 	int len;
 
-	for (len = 0; len < max && a[len] == b[len]; len++);
+	//for (len = 0; len < max && a[len] == b[len]; len++);
+	//return len;
+
+	len = 0;
+	do {
+		if (a[len] != b[len])
+			break;
+		len++;
+	} while (len < max);
 	return len;
 
 	//const char *end = a + max;
