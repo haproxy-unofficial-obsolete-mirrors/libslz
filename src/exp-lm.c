@@ -64,7 +64,8 @@ void encode(char *in, int ilen)
 		if (last < pos - 1 &&
 		    (uint32_t)ent == word) {
 			/* found a matching entry */
-			mlen = 4 + memmatch(in + pos + 4, in + last + 5, rem);
+			mlen = memmatch(in + pos, in + last + 1, rem);
+			//mlen = 4 + memmatch(in + pos + 4, in + last + 5, rem);
 			//printf("found [%d]:0x%06x == [%d=@-%d] %d bytes\n",
 			//       pos - 1, word,
 			//       last, pos - 1 - last,
