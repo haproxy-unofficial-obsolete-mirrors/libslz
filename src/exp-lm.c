@@ -5,16 +5,21 @@
 #include <string.h>
 #include <unistd.h>
 
-struct ref {
-	unsigned short pos; /* pos of next byte after match, 0 = unassigned */
-	unsigned short pos2; /* pos of next byte after match, 0 = unassigned */
-};
-
 char *buffer;
 int bufsize = 16384;
 int buflen;
 
-struct ref refs[65536];
+#define HASH_BITS 16
+
+/* format:
+ * bit0..23 = last position in buffer of similar content
+ */
+uint32_t refs[1 << HASH_BITS];
+
+static inline uint32_t hash(uint32_t a)
+{
+	return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
+}
 
 static inline int memmatch(const char *a, const char *b, int max)
 {
@@ -24,59 +29,49 @@ static inline int memmatch(const char *a, const char *b, int max)
 	return len;
 }
 
-/* does 306 MB/s on non-compressible data, 230 MB/s on HTML.
- * gzip does 33 MB/s on non-compressible data.
- */
+unsigned int /*totin = 0, */lit = 0, ref = 0;
+/* does 206 MB/s on non-compressible data, 286 MB/s on HTML. */
 void encode(char *in, int ilen)
 {
 	int rem = ilen;
 	int pos = 0;
 	uint32_t word = 0;
-	int bytes = 0;
-	struct ref *ref;
 	int mlen;
+	uint32_t h, last;
 
-#define MINBYTES 2
 	//printf("len = %d\n", ilen);
-	while (rem >= MINBYTES) {
-		word &= 0xFFFFFFFF >> ((5 - MINBYTES) * 8);
-		word = (word << 8) + (unsigned char)in[pos++];
-		ref = refs + word;
-		__builtin_prefetch(ref);
+	while (rem >= 2) {
+		//word = (word << 8) + (unsigned char)in[pos];
+		//word = ((unsigned char)in[pos] << 24) + (word >> 8);
+		word = *(uint32_t *)&in[pos];
+		//word &= 0x00FFFFFF;
+		//printf("%d %08x\n", pos, word);
+		h = hash(word);
+		__builtin_prefetch(refs + h);
+		pos++;
 		rem--;
-		bytes++;
-		if (bytes >= MINBYTES) {
-			/* refs are indexed on the first byte *after* the key */
-			if (ref->pos) {
-				int mlen2;
+		last = refs[h];
+		refs[h] = pos - 1;
 
-				/* found a matching entry */
-				mlen = memmatch(in + pos, in + ref->pos, rem);
+		if (last < pos - 1 && in[last] == (char)word) {
+			/* found a matching entry */
+			mlen = memmatch(in + pos, in + last + 1, rem);
+			if (mlen < 3)
+				goto tooshort;
 
-				if (mlen < 4 && ref->pos2 &&
-				    (mlen2 = memmatch(in + pos, in + ref->pos2, rem)) >= mlen) {
-					ref->pos = ref->pos2;
-					mlen = mlen2;
-				}
-
-				if (mlen < 1)
-					goto tooshort;
-
-				//printf("found [%d]:0x%06x == [%d] (+%d bytes)\n",
-				//       pos - MINBYTES, word,
-				//       ref->pos, mlen);
-				ref->pos2 = pos;
-				pos += mlen;
-				rem -= mlen;
-				bytes = 0;
-			}
-			else {
-			tooshort:
-				ref->pos = ref->pos2;
-				ref->pos2 = pos;
-				//printf("litteral [%d]:%02x\n", pos - MINBYTES, word >> (8 * (MINBYTES - 1)));
-				bytes--;
-			}
+			//printf("found [%d]:0x%06x == [%d=@-%d] %d bytes\n",
+			//       pos - 1, word,
+			//       last, pos - 1 - last,
+			//       mlen + 1);
+			pos += mlen;
+			rem -= mlen;
+			//word = 0;
+			ref += mlen;
+		}
+		else {
+		tooshort:
+			//printf("litteral [%d]:%08x\n", pos - 1, word);
+			lit++;
 		}
 	}
 }
@@ -84,6 +79,7 @@ void encode(char *in, int ilen)
 int main(int argc, char **argv)
 {
 	int loops = 1;
+	int totin = 0;
 
 	if (argc > 1)
 		bufsize = atoi(argv[1]);
@@ -103,9 +99,12 @@ int main(int argc, char **argv)
 		exit(2);
 	}
 
+	totin = buflen * loops;
 	while (loops--) {
-		memset(refs, 0, sizeof(refs));
+		//memset(refs, 0, sizeof(refs));
 		encode(buffer, buflen);
+		//totin += buflen;
 	}
+	printf("totin=%d lit=%d ref=%d\n", totin, lit, ref);
 	return 0;
 }
