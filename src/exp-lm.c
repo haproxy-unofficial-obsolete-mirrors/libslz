@@ -12,7 +12,7 @@ int buflen;
 #define HASH_BITS 15
 
 /* stats */
-unsigned int lit = 0, ref = 0;
+unsigned long lit = 0, ref = 0;
 
 /* format:
  * bit0..31  = word
@@ -84,10 +84,9 @@ static inline int memmatch0(const char *a, const char *b, int max)
 	//return len;
 }
 
-int/*long*/ memmatch(const char *a, const char *b, int/*long*/ max)
+long memmatch(const char *a, const char *b, long max)
 {
-	//long len;
-	int len;
+	long len;
 
 	//for (len = 0; len < max && a[len] == b[len]; len++);
 	//return len;
@@ -207,12 +206,12 @@ int/*long*/ memmatch(const char *a, const char *b, int/*long*/ max)
 }
 
 /* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
-void encode(char *in, int ilen)
+void encode(char *in, long ilen)
 {
-	int rem = ilen;
-	int pos = 0;
+	long rem = ilen;
+	long pos = 0;
 	uint32_t word = 0;
-	int mlen;
+	long mlen;
 	uint32_t h, last;
 	uint64_t ent;
 
@@ -280,6 +279,6 @@ int main(int argc, char **argv)
 		encode(buffer, buflen);
 		//totin += buflen;
 	}
-	printf("totin=%d lit=%d ref=%d\n", totin, lit, ref);
+	printf("totin=%d lit=%ld ref=%ld\n", totin, lit, ref);
 	return 0;
 }
