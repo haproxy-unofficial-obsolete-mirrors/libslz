@@ -91,13 +91,14 @@ long memmatch(const char *a, const char *b, long max)
 	//for (len = 0; len < max && a[len] == b[len]; len++);
 	//return len;
 
-	//len = 0;
-	//do {
-	//	if (a[len] != b[len])
-	//		break;
-	//	len++;
-	//} while (len < max);
-	//return len;
+	// 2.635s
+	len = 0;
+	do {
+		if (a[len] != b[len])
+			break;
+		len++;
+	} while (len < max);
+	return len;
 
 	// 2.832s
 	//len = 0;
@@ -122,14 +123,14 @@ long memmatch(const char *a, const char *b, long max)
 	//return a - beg;
 
 	// 2.702s
-	len = 0;
-	do {
-		if (a[len] != b[len])
-			break;
-		len++;
-		max--;
-	} while (max);
-	return len;
+	//len = 0;
+	//do {
+	//	if (a[len] != b[len])
+	//		break;
+	//	len++;
+	//	max--;
+	//} while (max);
+	//return len;
 
 	// 2.725s
 	//const char *beg = a;
