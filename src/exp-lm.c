@@ -28,20 +28,157 @@ static inline uint32_t hash(uint32_t a)
 	return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
 }
 
-static inline int memmatch(const char *a, const char *b, int max)
+static inline int memmatch0(const char *a, const char *b, int max)
 {
 	int len;
 
 	//for (len = 0; len < max && a[len] == b[len]; len++);
 	//return len;
 
+	//len = 0;
+	//do {
+	//	if (a[len] != b[len])
+	//		break;
+	//	len++;
+	//} while (len < max);
+	//return len;
+
+	len = 0;
+	do {
+		if (*(uint32_t *)(a + len) != *(uint32_t *)(b + len))
+			break;
+		len += 4;
+	} while (len <= max);
+
+	while (len < max) {
+		if (a[len] != b[len])
+			break;
+		len++;
+	}
+
+	return len;
+
+	//const char *end = a + max;
+	//
+	//while (a <= end - 4) {
+	//	if (*(uint32_t *)a != *(uint32_t *)b)
+	//		break;
+	//	b += 4;
+	//	a += 4;
+	//}
+	//
+	//while (a <= end - 1) {
+	//	if (*a != *b)
+	//		break;
+	//	b++;
+	//	a++;
+	//}
+	//return a - (end - max);
+
+	//len = 0;
+	//while (len <= max - 4 && *(uint32_t *)(a+len) == *(uint32_t *)(b+len))
+	//	len += 4;
+	////while (*(uint32_t *)(a+len) == *(uint32_t *)(b+len) && (len += 4) <= max - 4);
+	//while (len < max && a[len] == b[len])
+	//	len++;
+	//return len;
+}
+
+int/*long*/ memmatch(const char *a, const char *b, int/*long*/ max)
+{
+	//long len;
+	int len;
+
+	//for (len = 0; len < max && a[len] == b[len]; len++);
+	//return len;
+
+	//len = 0;
+	//do {
+	//	if (a[len] != b[len])
+	//		break;
+	//	len++;
+	//} while (len < max);
+	//return len;
+
+	// 2.832s
+	//len = 0;
+	//do {
+	//	if (a[len] != b[len])
+	//		break;
+	//	len++;
+	//} while (len <= max);
+	//
+	//return len;
+
+	// 2.761s
+	//const char *beg = a;
+	//const char *end = a + max;
+	//
+	//do {
+	//	if (*a != *b)
+	//		break;
+	//	b++;
+	//	a++;
+	//} while (a < end);
+	//return a - beg;
+
+	// 2.702s
 	len = 0;
 	do {
 		if (a[len] != b[len])
 			break;
 		len++;
-	} while (len < max);
+		max--;
+	} while (max);
 	return len;
+
+	// 2.725s
+	//const char *beg = a;
+	//do {
+	//	if (*a != *b)
+	//		break;
+	//	a++;
+	//	b++;
+	//	max--;
+	//} while (max);
+	//return a - beg;
+
+	// 3.559s
+	//asm(
+	//    "repz cmpsb"
+	//    : "=c" (len) : "c" (max), "D" (a), "S" (b) :);
+	//return max - len - 1;
+
+	// 2.738s
+	//asm(
+	//    "0:\n"
+	//    "mov (%%rsi), %%al\n"
+	//    "inc %%rsi\n"
+	//    "cmp (%%rdi), %%al\n"
+	//    "jne 1f\n"
+	//    "inc %%rdi\n"
+	//    "dec %%rcx\n"
+	//    "jnz 0b\n"
+	//    "1:\n"
+	//    : "=c" (len) : "c" (max), "D" (a), "S" (b) : "%al");
+	//return max - len;
+
+	// 2.872s
+	//asm(
+	//    "lea (%%rdx, %%rdi), %%rcx\n"
+	//    "0:\n"
+	//    "mov (%%rsi), %%al\n"
+	//    "inc %%rsi\n"
+	//    "cmp (%%rdi), %%al\n"
+	//    "jne 1f\n"
+	//    "inc %%rdi\n"
+	//    "cmp %%rcx, %%rdi\n"
+	//    "jne 0b\n"
+	//    "1:\n"
+	//    "lea (%%rdi, %%rdx), %%rax\n"
+	//    "sub %%rcx, %%rax\n"
+	//    : "=a" (len) : "d" (max), "D" (a), "S" (b) : "%rcx");
+	//return len;
 
 	//const char *end = a + max;
 	//
