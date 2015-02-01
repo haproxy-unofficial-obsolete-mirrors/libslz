@@ -438,6 +438,135 @@ static void dump_outbuf()
 	outlen = 0;
 }
 
+#define HASH_BITS 15
+
+/* stats */
+unsigned int lit = 0, ref = 0;
+
+/* format:
+ * bit0..31  = word
+ * bit32..63 = last position in buffer of similar content
+ */
+uint64_t refs[1 << HASH_BITS];
+
+/* This hash provides good average results on HTML contents, and is among the
+ * few which provide almost optimal results on various different pages.
+ */
+static inline uint32_t hash(uint32_t a)
+{
+	return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
+}
+
+static inline long memmatch(const char *a, const char *b, long max)
+{
+	long len;
+
+	len = 0;
+	do {
+		if (a[len] != b[len])
+			break;
+		len++;
+	} while (len < max);
+	return len;
+}
+
+/* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
+void encode(const char *in, long ilen)
+{
+	long rem = ilen;
+	long pos = 0;
+	uint32_t word = 0;
+	long mlen;
+	uint32_t h, last;
+	uint64_t ent;
+
+	uint32_t crc = 0;
+	uint32_t len;
+	uint32_t plit = 0;
+
+	//printf("len = %d\n", ilen);
+	while (1) {
+		//word = (word << 8) + (unsigned char)in[pos];
+		//word = ((unsigned char)in[pos] << 24) + (word >> 8);
+		word = *(uint32_t *)&in[pos];
+		//word &= 0x00FFFFFF;
+		//printf("%d %08x\n", pos, word);
+		h = hash(word);
+		__builtin_prefetch(refs + h);
+		pos++;
+		rem--;
+		ent = refs[h];
+		last = ent >> 32;
+		refs[h] = (((uint64_t)(pos - 1)) << 32) + word;
+
+		if (last < pos - 1 &&
+		    (uint32_t)ent == word && rem >= 2) {
+			/* found a matching entry */
+
+			/* first, copy pending literals */
+			fprintf(stderr, "dumping %d literals from %ld\n", plit, pos - 1 - plit);
+			while (plit) {
+				flush_bits();
+				len = copy_lit(in + pos - 1 - plit, plit, 1);
+				crc = update_crc(crc, in + pos - 1 - plit, len);
+				plit -= len;
+				//if (outlen > 32768)
+					dump_outbuf();
+			}
+
+			mlen = memmatch(in + pos, in + last + 1, rem);
+			//mlen = 4 + memmatch(in + pos + 4, in + last + 5, rem);
+			fprintf(stderr, "found [%ld]:0x%06x == [%d=@-%ld] %ld bytes, rem=%ld\n",
+			       pos - 1, word,
+			       last, pos - 1 - last,
+			       mlen + 1, rem);
+
+			ref += mlen; // for statistics
+			rem -= mlen;
+
+			/* for now we copy them as literals */
+			mlen++;
+			pos--;
+			do {
+				flush_bits();
+				len = copy_lit(in + pos - 1, mlen, 1);
+				crc = update_crc(crc, in + pos - 1, len);
+				pos += len;
+				mlen -= len;
+				//if (outlen > 32768)
+					dump_outbuf();
+			} while (mlen);
+		}
+		else {
+			fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
+			plit++;
+			lit++; // for statistics
+			if (!rem)
+				break;
+		}
+	}
+
+	/* now copy remaining literals or mark the end */
+	if (!plit) {
+		flush_bits();
+		len = copy_lit(NULL, 0, 0);
+	}
+	else while (plit) {
+		flush_bits();
+		len = copy_lit(in + pos - 1 - plit, plit, 0);
+		crc = update_crc(crc, in + pos - 1 - plit, len);
+		plit -= len;
+		if (outlen > 32768)
+			dump_outbuf();
+	}
+
+	flush_bits();
+	copy_32b(crc);
+	copy_32b(buflen);
+	dump_outbuf();
+}
+
+
 int main(int argc, char **argv)
 {
 	int loops = 1;
@@ -465,28 +594,9 @@ int main(int argc, char **argv)
 
 	totin = buflen * loops;
 	while (loops--) {
-		uint32_t crc;
-		uint32_t len, rem;
-
-		//memset(refs, 0, sizeof(refs));
-		//encode(buffer, buflen);
-		//totin += buflen;
-
-		crc = 0;
 		write(1, gzip_hdr, sizeof(gzip_hdr));
-		rem = buflen;
-
-		while (rem) {
-			len = copy_lit(buffer + buflen - rem, rem, 0);
-			crc = update_crc(crc, buffer + buflen - rem, len);
-			dump_outbuf();
-			rem -= len;
-		}
-
-		flush_bits();
-		copy_32b(crc);
-		copy_32b(buflen);
-		dump_outbuf();
+		memset(refs, 0, sizeof(refs));
+		encode(buffer, buflen);
 	}
 	//fprintf(stderr, "totin=%d lit=%d ref=%d\n", totin, lit, ref);
 	return 0;
