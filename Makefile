@@ -17,14 +17,17 @@ USR_LFLAGS :=
 LIB_LFLAGS := -L$(EBTREE_DIR)
 LDFLAGS    := $(DEB_LFLAGS) $(USR_LFLAGS) $(LIB_LFLAGS)
 
-BINS       := exp-lm
+BINS       := exp-lm rfc1952
 OBJS       :=
 OBJS       += $(patsubst %.c,%.o,$(wildcard src/*.c))
 OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
 
 all: $(BINS)
 
-exp-lm: $(OBJS)
+exp-lm: src/exp-lm.c
+	$(LD) $(LDFLAGS) -o $@ $^
+
+rfc1952: src/rfc1952.c
 	$(LD) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
