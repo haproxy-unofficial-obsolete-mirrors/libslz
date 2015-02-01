@@ -333,6 +333,110 @@ uint32_t do_crc(void *buf, int len)
 	return update_crc(0, buf, len);
 }
 
+/* data are queued by LSB first */
+static uint32_t queue;
+static uint32_t qbits; /* number of bits in queue, < 8 */
+
+static char outbuf[65536 * 2];
+static int  outsize = 65536;
+static int  outlen;
+
+/* enqueue code x of <xbits> bits (LSB aligned) and copy complete bytes into.
+ * out buf. X must not contain non-zero bits above xbits.
+ */
+static void enqueue(uint32_t x, uint32_t xbits)
+{
+	queue += x << qbits;
+	qbits += xbits;
+	if (qbits < 8)
+		return;
+
+	if (qbits < 16) {
+		/* usual case */
+		outbuf[outlen] = queue;
+		outlen += 1;
+		queue >>= 8;
+		qbits -= 8;
+		return;
+	}
+	/* case where we queue large codes after small ones, eg: 7 then 9 */
+	outbuf[outlen]     = queue;
+	outbuf[outlen + 1] = queue >> 8;
+	outlen += 2;
+	queue >>= 16;
+	qbits -= 16;
+}
+
+/* align to next byte */
+static inline void flush_bits()
+{
+	if (qbits) {
+		outbuf[outlen] = queue;
+		outlen += 1;
+		queue = 0;
+		qbits = 0;
+	}
+}
+
+/* only valid if buffer is already aligned */
+static inline void copy_8b(uint32_t x)
+{
+	outbuf[outlen] = x;
+	outlen += 1;
+}
+
+/* only valid if buffer is already aligned */
+static inline void copy_16b(uint32_t x)
+{
+	outbuf[outlen] = x;
+	outbuf[outlen + 1] = x >> 8;
+	outlen += 2;
+}
+
+/* only valid if buffer is already aligned */
+static inline void copy_32b(uint32_t x)
+{
+	outbuf[outlen] = x;
+	outbuf[outlen + 1] = x >> 8;
+	outbuf[outlen + 2] = x >> 16;
+	outbuf[outlen + 3] = x >> 24;
+	outlen += 4;
+}
+
+/* copies at most <len> litterals from <buf>, returns the amount of data
+ * copied. <more> indicates that there are data past buf + <len>.
+ */
+static unsigned int copy_lit(const void *buf, int len, int more)
+{
+	if (len + 5 > outsize - outlen) {
+		len = outsize - outlen - 5;
+		more = 1;
+	}
+
+	if (len <= 0)
+		return 0;
+
+	if (len > 65535) {
+		len = 65535;
+		more = 1;
+	}
+
+	//fprintf(stderr, "len=%d more=%d\n", len, more);
+	enqueue(!more, 3); // BFINAL = !more ; BTYPE = 00
+	flush_bits();
+	copy_16b(len);  // len
+	copy_16b(~len); // nlen
+	memcpy(outbuf + outlen, buf, len);
+	outlen += len;
+	return len;
+}
+
+/* dumps buffer to stdout */
+static void dump_outbuf()
+{
+	write(1, outbuf, outlen);
+	outlen = 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -362,7 +466,7 @@ int main(int argc, char **argv)
 	totin = buflen * loops;
 	while (loops--) {
 		uint32_t crc;
-		uint32_t len, nlen;
+		uint32_t len, rem;
 
 		//memset(refs, 0, sizeof(refs));
 		//encode(buffer, buflen);
@@ -370,24 +474,19 @@ int main(int argc, char **argv)
 
 		crc = 0;
 		write(1, gzip_hdr, sizeof(gzip_hdr));
-		len = buflen;
-		while (len > 65535) {
-			nlen = 0x0000FFFF;
-			write(1, "\x00", 1); // no comp, not final
-			write(1, &nlen, 4);
-			write(1, buffer + buflen - len, 65535);
-			crc = update_crc(crc, buffer + buflen - len, 65535);
-			len -= 65535;
-		}
-		nlen = len | ((~len) << 16);
-		write(1, "\x01", 1); // no comp, final
-		write(1, &nlen, 4);
-		write(1, buffer + buflen - len, len);
-		crc = update_crc(crc, buffer + buflen - len, len);
+		rem = buflen;
 
-		//crc = do_crc(buffer, buflen);
-		write(1, &crc, 4);
-		write(1, &buflen, 4);
+		while (rem) {
+			len = copy_lit(buffer + buflen - rem, rem, 0);
+			crc = update_crc(crc, buffer + buflen - rem, len);
+			dump_outbuf();
+			rem -= len;
+		}
+
+		flush_bits();
+		copy_32b(crc);
+		copy_32b(buflen);
+		dump_outbuf();
 	}
 	//fprintf(stderr, "totin=%d lit=%d ref=%d\n", totin, lit, ref);
 	return 0;
