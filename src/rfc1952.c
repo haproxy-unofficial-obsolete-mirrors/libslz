@@ -702,7 +702,7 @@ void encode(const char *in, long ilen)
 			fprintf(stderr, "dumping %d literals from %ld\n", plit, pos - 1 - plit);
 			while (plit) {
 				//flush_bits();
-				len = copy_lit(in + pos - 1 - plit, plit, 1);
+				len = copy_lit_huff(in + pos - 1 - plit, plit, 1);
 				crc = update_crc(crc, in + pos - 1 - plit, len);
 				plit -= len;
 				//if (outlen > 32768)
@@ -725,7 +725,7 @@ void encode(const char *in, long ilen)
 			pos--;
 			do {
 				//flush_bits();
-				len = copy_lit/*_huff*/(in + pos, mlen, 1);
+				len = copy_lit_huff(in + pos, mlen, 1);
 				crc = update_crc(crc, in + pos, len);
 				pos += len;
 				mlen -= len;
@@ -750,7 +750,7 @@ void encode(const char *in, long ilen)
 	}
 	else while (plit) {
 		//flush_bits();
-		len = copy_lit/*_huff*/(in + pos - 1 - plit, plit, 0);
+		len = copy_lit_huff(in + pos - 1 - plit, plit, 0);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
 		if (outlen > 32768)
