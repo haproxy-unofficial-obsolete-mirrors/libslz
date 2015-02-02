@@ -718,15 +718,16 @@ void encode(const char *in, long ilen)
 
 			ref += mlen; // for statistics
 			rem -= mlen;
+			mlen++;
+			pos--;
+
+			crc = update_crc(crc, in + pos, mlen);
 			//pos += mlen;
 
 			/* for now we copy them as literals */
-			mlen++;
-			pos--;
 			do {
 				//flush_bits();
 				len = copy_lit_huff(in + pos, mlen, 1);
-				crc = update_crc(crc, in + pos, len);
 				pos += len;
 				mlen -= len;
 				//if (outlen > 32768)
