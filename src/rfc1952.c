@@ -234,6 +234,17 @@ Distance encoding :
                    280 - 287     8          11000000 through
                                             11000111
 
+         The code lengths are sufficient to generate the actual codes,
+         as described above; we show the codes in the table for added
+         clarity.  Literal/length values 286-287 will never actually
+         occur in the compressed data, but participate in the code
+         construction.
+
+         Distance codes 0-31 are represented by (fixed-length) 5-bit
+         codes, with possible additional bits as shown in the table
+         shown in Paragraph 3.2.5, above.  Note that distance codes 30-
+         31 will never actually occur in the compressed data.
+
 */
 
 
@@ -517,6 +528,7 @@ static void enqueue(uint32_t x, uint32_t xbits)
 	outlen += 2;
 	queue >>= 16;
 	qbits -= 16;
+	//fprintf(stderr, "qbits=%d outlen=%d\n", qbits, outlen);
 }
 
 /* align to next byte */
@@ -584,15 +596,21 @@ static unsigned int copy_lit(const void *buf, int len, int more)
 }
 
 
-static void send_eob()
+static inline void send_huff(uint32_t code)
 {
-	uint32_t code, bits;
+	uint32_t bits;
 
-	/* end of block = 256 */
-	code = fixed_huff[256];
+	code = fixed_huff[code];
 	bits = code & 15;
 	code >>= 4;
 	enqueue(code, bits);
+}
+
+static inline void send_eob()
+{
+	fprintf(stderr, "eob\n");
+	/* end of block = 256 */
+	send_huff(256);
 }
 
 /* copies at most <len> litterals from <buf>, returns the amount of data
@@ -600,7 +618,6 @@ static void send_eob()
  */
 static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 {
-	uint32_t code, bits;
 	uint32_t pos;
 
 	if (len + 5 > outsize - outlen) {
@@ -616,10 +633,7 @@ static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 
 	pos = 0;
 	while (pos < len) {
-		code = fixed_huff[buf[pos++]];
-		bits = code & 15;
-		code >>= 4;
-		enqueue(code, bits);
+		send_huff(buf[pos++]);
 	}
 	send_eob();
 	return len;
@@ -677,6 +691,7 @@ void encode(const char *in, long ilen)
 	uint32_t crc = 0;
 	uint32_t len;
 	uint32_t plit = 0;
+	uint32_t bits, code;
 
 	//printf("len = %d\n", ilen);
 	while (1) {
@@ -694,7 +709,8 @@ void encode(const char *in, long ilen)
 		refs[h] = (((uint64_t)(pos - 1)) << 32) + word;
 
 		if (last < pos - 1 &&
-		    last >= pos - 32768 &&
+		    //last >= pos - 32768 &&
+		    pos - last <= 32768 &&
 		    (uint32_t)ent == word && rem >= 2) {
 			/* found a matching entry */
 
@@ -716,6 +732,10 @@ void encode(const char *in, long ilen)
 			       last, pos - 1 - last,
 			       mlen + 1, rem);
 
+			/* cannot encode a length larger than 258 bytes */
+			if (mlen >= 257)
+				mlen = 257;
+
 			ref += mlen; // for statistics
 			rem -= mlen;
 			mlen++;
@@ -724,6 +744,44 @@ void encode(const char *in, long ilen)
 			crc = update_crc(crc, in + pos, mlen);
 			//pos += mlen;
 
+#if 1
+			/* use mode 01 - fixed huffman */
+			enqueue(0x02, 3); // BTYPE = 01, BFINAL = 0
+
+			/* copy the length first */
+			word = len_code[mlen];
+			code = (word & 31) + 257;
+			send_huff(code);
+			word >>= 5; bits = word & 7;
+
+			//uint32_t lword = word;
+			//uint32_t lbits = bits;
+			if (bits)
+				enqueue(word >> 3, bits);
+
+			fprintf(stderr, "mlen=%ld code=%d bits=%d word=%d\n",
+				mlen, code, bits, word);
+
+			/* then copy the distance : pos - last */
+			code = dist_to_code(pos - last);
+			bits = code >> 1;
+			if (bits)
+				bits--;
+			/* in fixed huffman mode, dist is fixed 5 bits */
+			enqueue(code, 5);
+			//send_huff(code);
+
+			//if (lbits)
+			//	enqueue(lword >> 3, lbits);
+
+			if (bits)
+				enqueue(((pos - last) - 1) & ((1 << bits) - 1), bits);
+
+			fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
+				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
+			pos += mlen;
+			send_eob();
+#else
 			/* for now we copy them as literals */
 			do {
 				//flush_bits();
@@ -731,8 +789,11 @@ void encode(const char *in, long ilen)
 				pos += len;
 				mlen -= len;
 				//if (outlen > 32768)
-					dump_outbuf();
+				//dump_outbuf();
 			} while (mlen);
+#endif
+			if (outlen > 32768)
+				dump_outbuf();
 		}
 		else {
 			if (rem < 0)
