@@ -300,6 +300,16 @@ static const uint16_t len_code[259] = {
 	0x1dbb, 0x1ebb, 0x001c					        // 256
 };
 
+/* Distance codes are stored on 5 bits reversed. The RFC doesn't state that
+ * they are reversed, but it's the only way it works.
+ */
+static const uint8_t dist_codes[32] = {
+	0, 16, 8, 24, 4, 20, 12, 28,
+	2, 18, 10, 26, 6, 22, 14, 30,
+	1, 17, 9, 25, 5, 21, 13, 29,
+	3, 19, 11, 27, 7, 23, 15, 31
+};
+
 
 /* Fixed Huffman table as per RFC1951.
  *
@@ -369,6 +379,7 @@ static uint32_t qbits; /* number of bits in queue, < 8 */
 static char outbuf[65536 * 2];
 static int  outsize = 65536;
 static int  outlen;
+static int  totout;
 
 
 /* Make the table for a fast CRC. */
@@ -447,6 +458,22 @@ uint32_t update_crc(uint32_t crc, const void *buf, int len)
 uint32_t do_crc(void *buf, int len)
 {
 	return update_crc(0, buf, len);
+}
+
+/* keeps the lowest <bits> bits of x and swaps them. Note, this is slow, so
+ * only use for debugging.
+ */
+uint32_t swap_bits(uint32_t x, uint32_t bits)
+{
+	uint32_t y = 0;
+
+	while (bits) {
+		y <<= 1;
+		y += x & 1;
+		x >>= 1;
+		bits--;
+	}
+	return y;
 }
 
 /* Returns code for lengths 1 to 32768. The bit size for the next value can be
@@ -643,6 +670,7 @@ static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 static void dump_outbuf()
 {
 	write(1, outbuf, outlen);
+	totout += outlen;
 	outlen = 0;
 }
 
@@ -746,6 +774,7 @@ void encode(const char *in, long ilen)
 
 #if 1
 			/* use mode 01 - fixed huffman */
+			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, qbits);
 			enqueue(0x02, 3); // BTYPE = 01, BFINAL = 0
 
 			/* copy the length first */
@@ -768,7 +797,7 @@ void encode(const char *in, long ilen)
 			if (bits)
 				bits--;
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			enqueue(code, 5);
+			enqueue(dist_codes[code], 5);
 			//send_huff(code);
 
 			//if (lbits)
@@ -781,9 +810,12 @@ void encode(const char *in, long ilen)
 				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
 			send_eob();
+
+			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, qbits);
 #else
 			/* for now we copy them as literals */
 			do {
+				fprintf(stderr, "sending lit as huff lit pos=%d mlen=%d\n", pos, mlen);
 				//flush_bits();
 				len = copy_lit_huff(in + pos, mlen, 1);
 				pos += len;
