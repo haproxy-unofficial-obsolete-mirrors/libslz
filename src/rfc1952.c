@@ -524,13 +524,6 @@ static uint32_t dist_to_code(uint32_t l)
 	}
 
 	return code;
-
-	//bits = code >> 1;
-	//if (bits)
-	//	bits--;
-	//
-	//printf("l=%d code=%d bits=%d mask=%d value=%d\n",
-	//       l, code, bits, (1 << bits) - 1, (l - 1) & ((1 << bits) - 1));
 }
 
 /* enqueue code x of <xbits> bits (LSB aligned) and copy complete bytes into.
@@ -746,7 +739,6 @@ void encode(const char *in, long ilen)
 		refs[h] = (((uint64_t)(pos - 1)) << 32) + word;
 
 		if (last < pos - 1 &&
-		    //last >= pos - 32768 &&
 		    pos - last <= 32768 &&
 		    (uint32_t)ent == word && rem >= 2) {
 			/* found a matching entry */
@@ -781,7 +773,6 @@ void encode(const char *in, long ilen)
 			crc = update_crc(crc, in + pos, mlen);
 			//pos += mlen;
 
-#if 1
 			/* use mode 01 - fixed huffman */
 			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, qbits);
 
@@ -798,8 +789,6 @@ void encode(const char *in, long ilen)
 			send_huff(code);
 			word >>= 5; bits = word & 7;
 
-			//uint32_t lword = word;
-			//uint32_t lbits = bits;
 			if (bits)
 				enqueue(word >> 3, bits);
 
@@ -813,10 +802,6 @@ void encode(const char *in, long ilen)
 				bits--;
 			/* in fixed huffman mode, dist is fixed 5 bits */
 			enqueue(dist_codes[code], 5);
-			//send_huff(code);
-
-			//if (lbits)
-			//	enqueue(lword >> 3, lbits);
 
 			if (bits)
 				enqueue(((pos - last) - 1) & ((1 << bits) - 1), bits);
@@ -824,21 +809,8 @@ void encode(const char *in, long ilen)
 			fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
-			//send_eob();
 
 			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, qbits);
-#else
-			/* for now we copy them as literals */
-			do {
-				fprintf(stderr, "sending lit as huff lit pos=%d mlen=%d\n", pos, mlen);
-				//flush_bits();
-				len = copy_lit_huff(in + pos, mlen, 1);
-				pos += len;
-				mlen -= len;
-				//if (outlen > 32768)
-				//dump_outbuf();
-			} while (mlen);
-#endif
 			if (outlen > 32768)
 				dump_outbuf();
 		}
