@@ -751,10 +751,14 @@ void encode(const char *in, long ilen)
 		 *  rfc1952.c   29383   13442 (45.7%)   11793 (40.1%) -12.3%
 		 *
 		 * Thus the savings to expect for large files is at best 16%.
+		 *
+		 * A non-colliding hash gives 33025 instead of 35662 (-7.4%),
+		 * and keeping the last two entries gives 31724 (-11.0%).
 		 */
 		int bestpos = 0;
 		int bestlen = 0;
 		int firstlen = 0;
+		int max_lookup = 2; // 0 = no limit
 
 		/* last<pos checks for overflow */
 		for (last = pos - 2; last < pos - 1 && pos - last <= 32768; last--) {
@@ -770,6 +774,8 @@ void encode(const char *in, long ilen)
 				bestpos = last;
 				ent = word;
 			}
+			if (!--max_lookup)
+				break;
 		}
 		if (bestlen) {
 			last = bestpos;
