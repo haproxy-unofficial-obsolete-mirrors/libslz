@@ -376,6 +376,8 @@ static const uint32_t *crc_table = crc32Lookup[0];
 static uint32_t queue;
 static uint32_t qbits; /* number of bits in queue, < 8 */
 
+static uint32_t btype; /* current block type (0..3). initially 0 (no comp). */
+
 static char outbuf[65536 * 2];
 static int  outsize = 65536;
 static int  outlen;
@@ -594,35 +596,6 @@ static inline void copy_32b(uint32_t x)
 	outlen += 4;
 }
 
-/* copies at most <len> litterals from <buf>, returns the amount of data
- * copied. <more> indicates that there are data past buf + <len>.
- */
-static unsigned int copy_lit(const void *buf, int len, int more)
-{
-	if (len + 5 > outsize - outlen) {
-		len = outsize - outlen - 5;
-		more = 1;
-	}
-
-	if (len <= 0)
-		return 0;
-
-	if (len > 65535) {
-		len = 65535;
-		more = 1;
-	}
-
-	//fprintf(stderr, "len=%d more=%d\n", len, more);
-	enqueue(!more, 3); // BFINAL = !more ; BTYPE = 00
-	flush_bits();
-	copy_16b(len);  // len
-	copy_16b(~len); // nlen
-	memcpy(outbuf + outlen, buf, len);
-	outlen += len;
-	return len;
-}
-
-
 static inline void send_huff(uint32_t code)
 {
 	uint32_t bits;
@@ -643,6 +616,38 @@ static inline void send_eob()
 /* copies at most <len> litterals from <buf>, returns the amount of data
  * copied. <more> indicates that there are data past buf + <len>.
  */
+static unsigned int copy_lit(const void *buf, int len, int more)
+{
+	if (len + 5 > outsize - outlen) {
+		len = outsize - outlen - 5;
+		more = 1;
+	}
+
+	if (len <= 0)
+		return 0;
+
+	if (len > 65535) {
+		len = 65535;
+		more = 1;
+	}
+
+	if (btype)
+		send_eob();
+	btype = 0;
+
+	//fprintf(stderr, "len=%d more=%d\n", len, more);
+	enqueue(!more, 3); // BFINAL = !more ; BTYPE = 00
+	flush_bits();
+	copy_16b(len);  // len
+	copy_16b(~len); // nlen
+	memcpy(outbuf + outlen, buf, len);
+	outlen += len;
+	return len;
+}
+
+/* copies at most <len> litterals from <buf>, returns the amount of data
+ * copied. <more> indicates that there are data past buf + <len>.
+ */
 static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 {
 	uint32_t pos;
@@ -655,14 +660,18 @@ static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 	if (len <= 0)
 		return 0;
 
-	//fprintf(stderr, "len=%d more=%d\n", len, more);
-	enqueue(2 + !more, 3); // BFINAL = !more ; BTYPE = 01
+	if (btype != 1 || !more) {
+		if (btype)
+			send_eob();
+		//fprintf(stderr, "len=%d more=%d\n", len, more);
+		enqueue(2 + !more, 3); // BFINAL = !more ; BTYPE = 01
+		btype = 1;
+	}
 
 	pos = 0;
 	while (pos < len) {
 		send_huff(buf[pos++]);
 	}
-	send_eob();
 	return len;
 }
 
@@ -775,7 +784,13 @@ void encode(const char *in, long ilen)
 #if 1
 			/* use mode 01 - fixed huffman */
 			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, qbits);
-			enqueue(0x02, 3); // BTYPE = 01, BFINAL = 0
+
+			if (btype != 1) {
+				if (btype > 1)
+					send_eob();
+				enqueue(0x02, 3); // BTYPE = 01, BFINAL = 0
+				btype = 1;
+			}
 
 			/* copy the length first */
 			word = len_code[mlen];
@@ -809,7 +824,7 @@ void encode(const char *in, long ilen)
 			fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
-			send_eob();
+			//send_eob();
 
 			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, qbits);
 #else
@@ -838,7 +853,8 @@ void encode(const char *in, long ilen)
 
 	/* now copy remaining literals or mark the end */
 	if (!plit) {
-		send_eob();
+		if (btype)
+			send_eob();
 		//flush_bits();
 		//len = copy_lit(NULL, 0, 0);
 	}
@@ -847,6 +863,8 @@ void encode(const char *in, long ilen)
 		len = copy_lit_huff(in + pos - 1 - plit, plit, 0);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
+		if (btype)
+			send_eob();
 		if (outlen > 32768)
 			dump_outbuf();
 	}
