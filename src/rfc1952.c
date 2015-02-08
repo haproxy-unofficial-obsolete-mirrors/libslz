@@ -694,6 +694,7 @@ static inline uint32_t hash(uint32_t a)
 {
 	//return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
 	return ((a << 2) ^ (a << 7) ^ (a << 12) ^ (a << 20)) >> (32 - HASH_BITS);
+	//return (a * 0xc4b5a687) >> (32 - HASH_BITS);
 }
 
 static inline long memmatch(const char *a, const char *b, long max)
