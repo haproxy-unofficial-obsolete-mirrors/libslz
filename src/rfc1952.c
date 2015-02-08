@@ -692,9 +692,15 @@ uint64_t refs[1 << HASH_BITS];
  */
 static inline uint32_t hash(uint32_t a)
 {
+	//return do_crc(&a, 4) >> (32 - HASH_BITS);
+	//return do_crc(&a, 4) & ((1 << HASH_BITS) - 1);
 	//return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
 	return ((a << 2) ^ (a << 7) ^ (a << 12) ^ (a << 20)) >> (32 - HASH_BITS);
+	//return (a + (a * 4) + (a * 128) + (a * 4096) + (a * 1048576)) >> (32 - HASH_BITS);
+	//return (a * 1052805) >> (32 - HASH_BITS); // same as above
+	//return (- a - (a >> 2) - (a >> 4) + (a >> 6)) & ((1 << HASH_BITS) - 1);
 	//return (a * 0xc4b5a687) >> (32 - HASH_BITS);
+	//return (a * 2654435761U) >> (32 - HASH_BITS); // used by lz4
 }
 
 static inline long memmatch(const char *a, const char *b, long max)
