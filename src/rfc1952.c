@@ -724,6 +724,7 @@ void encode(const char *in, long ilen)
 	uint32_t len;
 	uint32_t plit = 0;
 	uint32_t bits, code;
+	uint32_t saved = 0;
 
 	//printf("len = %d\n", ilen);
 	while (1) {
@@ -739,6 +740,43 @@ void encode(const char *in, long ilen)
 		ent = refs[h];
 		last = ent >> 32;
 		refs[h] = (((uint64_t)(pos - 1)) << 32) + word;
+
+#if FIND_OPTIMAL_MATCH
+		/* Experimental code to see what could be saved with an ideal
+		 * longest match lookup algorithm. This one is very slow but
+		 * scans the whole window. In short, here are the savings :
+		 *   file        orig     fast(ratio)  optimal(ratio)
+		 *  README       5185    3419 (65.9%)    3165 (61.0%)  -7.5%
+		 *  index.html  76799   35662 (46.4%)   29875 (38.9%) -16.3%
+		 *  rfc1952.c   29383   13442 (45.7%)   11793 (40.1%) -12.3%
+		 *
+		 * Thus the savings to expect for large files is at best 16%.
+		 */
+		int bestpos = 0;
+		int bestlen = 0;
+		int firstlen = 0;
+
+		/* last<pos checks for overflow */
+		for (last = pos - 2; last < pos - 1 && pos - last <= 32768; last--) {
+			if (*(uint32_t *)(in + last) != word)
+				continue;
+
+			len = memmatch(in + pos - 1, in + last, rem + 1);
+			if (!bestlen)
+				firstlen = len;
+
+			if (len > bestlen) {
+				bestlen = len;
+				bestpos = last;
+				ent = word;
+			}
+		}
+		if (bestlen) {
+			last = bestpos;
+			saved += bestlen - firstlen;
+		}
+		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
+#endif
 
 		if (last < pos - 1 &&
 		    pos - last <= 32768 &&
@@ -847,6 +885,7 @@ void encode(const char *in, long ilen)
 	copy_32b(crc);
 	copy_32b(buflen);
 	dump_outbuf();
+	fprintf(stderr, "Saved between first and optimal: %d\n", saved);
 }
 
 
