@@ -881,6 +881,9 @@ void encode(const char *in, long ilen)
 			send_eob();
 		//flush_bits();
 		//len = copy_lit(NULL, 0, 0);
+		/* BTYPE=1, BFINAL=1 */
+		enqueue(strm, 3, 3);
+		send_eob(strm);
 	}
 	else while (plit) {
 		//flush_bits();
