@@ -372,10 +372,6 @@ static const uint16_t fixed_huff[288] = {
 static uint32_t crc32Lookup[4][256];
 static const uint32_t *crc_table = crc32Lookup[0];
 
-/* data are queued by LSB first */
-static uint32_t queue;
-static uint32_t qbits; /* number of bits in queue, < 8 */
-
 static uint32_t btype; /* current block type (0..3). initially 0 (no comp). */
 
 static char outbuf[65536 * 2];
@@ -383,6 +379,21 @@ static int  outsize = 65536;
 static int  outlen;
 static int  totout;
 
+enum slz_state {
+	SLZ_ST_INIT,  /* stream initialized */
+	SLZ_ST_EOB,   /* header or end of block already sent */
+	SLZ_ST_FIXED, /* inside a fixed huffman sequence */
+	SLZ_ST_LAST,  /* end of block, BFINAL sent */
+	SLZ_ST_END    /* end sent (BFINAL, EOB, CRC + len) */
+};
+
+struct slz_stream {
+	enum slz_state state;
+	uint32_t crc32;
+	uint32_t ilen;
+	uint32_t queue; /* last pending bits, LSB first */
+	uint32_t qbits; /* number of bits in queue, < 8 */
+};
 
 /* Make the table for a fast CRC. */
 void make_crc_table(void)
@@ -529,38 +540,38 @@ static uint32_t dist_to_code(uint32_t l)
 /* enqueue code x of <xbits> bits (LSB aligned) and copy complete bytes into.
  * out buf. X must not contain non-zero bits above xbits.
  */
-static void enqueue(uint32_t x, uint32_t xbits)
+static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 {
-	queue += x << qbits;
-	qbits += xbits;
-	if (qbits < 8)
+	strm->queue += x << strm->qbits;
+	strm->qbits += xbits;
+	if (strm->qbits < 8)
 		return;
 
-	if (qbits < 16) {
+	if (strm->qbits < 16) {
 		/* usual case */
-		outbuf[outlen] = queue;
+		outbuf[outlen] = strm->queue;
 		outlen += 1;
-		queue >>= 8;
-		qbits -= 8;
+		strm->queue >>= 8;
+		strm->qbits -= 8;
 		return;
 	}
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
-	outbuf[outlen]     = queue;
-	outbuf[outlen + 1] = queue >> 8;
+	outbuf[outlen]     = strm->queue;
+	outbuf[outlen + 1] = strm->queue >> 8;
 	outlen += 2;
-	queue >>= 16;
-	qbits -= 16;
+	strm->queue >>= 16;
+	strm->qbits -= 16;
 	//fprintf(stderr, "qbits=%d outlen=%d\n", qbits, outlen);
 }
 
 /* align to next byte */
-static inline void flush_bits()
+static inline void flush_bits(struct slz_stream *strm)
 {
-	if (qbits) {
-		outbuf[outlen] = queue;
+	if (strm->qbits) {
+		outbuf[outlen] = strm->queue;
 		outlen += 1;
-		queue = 0;
-		qbits = 0;
+		strm->queue = 0;
+		strm->qbits = 0;
 	}
 }
 
@@ -589,27 +600,27 @@ static inline void copy_32b(uint32_t x)
 	outlen += 4;
 }
 
-static inline void send_huff(uint32_t code)
+static inline void send_huff(struct slz_stream *strm, uint32_t code)
 {
 	uint32_t bits;
 
 	code = fixed_huff[code];
 	bits = code & 15;
 	code >>= 4;
-	enqueue(code, bits);
+	enqueue(strm, code, bits);
 }
 
-static inline void send_eob()
+static inline void send_eob(struct slz_stream *strm)
 {
 	fprintf(stderr, "eob\n");
 	/* end of block = 256 */
-	send_huff(256);
+	send_huff(strm, 256);
 }
 
 /* copies at most <len> litterals from <buf>, returns the amount of data
  * copied. <more> indicates that there are data past buf + <len>.
  */
-static unsigned int copy_lit(const void *buf, int len, int more)
+static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, int more)
 {
 	if (len + 5 > outsize - outlen) {
 		len = outsize - outlen - 5;
@@ -625,12 +636,12 @@ static unsigned int copy_lit(const void *buf, int len, int more)
 	}
 
 	if (btype)
-		send_eob();
+		send_eob(strm);
 	btype = 0;
 
 	//fprintf(stderr, "len=%d more=%d\n", len, more);
-	enqueue(!more, 3); // BFINAL = !more ; BTYPE = 00
-	flush_bits();
+	enqueue(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
+	flush_bits(strm);
 	copy_16b(len);  // len
 	copy_16b(~len); // nlen
 	memcpy(outbuf + outlen, buf, len);
@@ -641,7 +652,7 @@ static unsigned int copy_lit(const void *buf, int len, int more)
 /* copies at most <len> litterals from <buf>, returns the amount of data
  * copied. <more> indicates that there are data past buf + <len>.
  */
-static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
+static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *buf, int len, int more)
 {
 	uint32_t pos;
 
@@ -655,15 +666,15 @@ static unsigned int copy_lit_huff(const unsigned char *buf, int len, int more)
 
 	if (btype != 1 || !more) {
 		if (btype)
-			send_eob();
+			send_eob(strm);
 		//fprintf(stderr, "len=%d more=%d\n", len, more);
-		enqueue(2 + !more, 3); // BFINAL = !more ; BTYPE = 01
+		enqueue(strm, 2 + !more, 3); // BFINAL = !more ; BTYPE = 01
 		btype = 1;
 	}
 
 	pos = 0;
 	while (pos < len) {
-		send_huff(buf[pos++]);
+		send_huff(strm, buf[pos++]);
 	}
 	return len;
 }
@@ -717,7 +728,7 @@ static inline long memmatch(const char *a, const char *b, long max)
 }
 
 /* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
-void encode(const char *in, long ilen)
+void encode(struct slz_stream *strm, const char *in, long ilen)
 {
 	long rem = ilen;
 	long pos = 0;
@@ -726,7 +737,7 @@ void encode(const char *in, long ilen)
 	uint32_t h, last;
 	uint64_t ent;
 
-	uint32_t crc = 0;
+	uint32_t crc = strm->crc32;
 	uint32_t len;
 	uint32_t plit = 0;
 	uint32_t bits, code;
@@ -799,7 +810,7 @@ void encode(const char *in, long ilen)
 			fprintf(stderr, "dumping %d literals from %ld\n", plit, pos - 1 - plit);
 			while (plit) {
 				//flush_bits();
-				len = copy_lit_huff(in + pos - 1 - plit, plit, 1);
+				len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 1);
 				crc = update_crc(crc, in + pos - 1 - plit, len);
 				plit -= len;
 				//if (outlen > 32768)
@@ -826,23 +837,23 @@ void encode(const char *in, long ilen)
 			//pos += mlen;
 
 			/* use mode 01 - fixed huffman */
-			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, qbits);
+			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
 
 			if (btype != 1) {
 				if (btype > 1)
-					send_eob();
-				enqueue(0x02, 3); // BTYPE = 01, BFINAL = 0
+					send_eob(strm);
+				enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
 				btype = 1;
 			}
 
 			/* copy the length first */
 			word = len_code[mlen];
 			code = (word & 31) + 257;
-			send_huff(code);
+			send_huff(strm, code);
 			word >>= 5; bits = word & 7;
 
 			if (bits)
-				enqueue(word >> 3, bits);
+				enqueue(strm, word >> 3, bits);
 
 			fprintf(stderr, "mlen=%ld code=%d bits=%d word=%d\n",
 				mlen, code, bits, word);
@@ -853,16 +864,16 @@ void encode(const char *in, long ilen)
 			if (bits)
 				bits--;
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			enqueue(dist_codes[code], 5);
+			enqueue(strm, dist_codes[code], 5);
 
 			if (bits)
-				enqueue(((pos - last) - 1) & ((1 << bits) - 1), bits);
+				enqueue(strm, ((pos - last) - 1) & ((1 << bits) - 1), bits);
 
 			fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
 
-			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, qbits);
+			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
 			if (outlen > 32768)
 				dump_outbuf();
 		}
@@ -878,7 +889,7 @@ void encode(const char *in, long ilen)
 	/* now copy remaining literals or mark the end */
 	if (!plit) {
 		if (btype)
-			send_eob();
+			send_eob(strm);
 		//flush_bits();
 		//len = copy_lit(NULL, 0, 0);
 		/* BTYPE=1, BFINAL=1 */
@@ -887,20 +898,72 @@ void encode(const char *in, long ilen)
 	}
 	else while (plit) {
 		//flush_bits();
-		len = copy_lit_huff(in + pos - 1 - plit, plit, 0);
+		len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
 		if (btype)
-			send_eob();
+			send_eob(strm);
 		if (outlen > 32768)
 			dump_outbuf();
 	}
 
-	flush_bits();
-	copy_32b(crc);
-	copy_32b(buflen);
+	strm->crc32 = crc;
+	strm->ilen += ilen;
+	//flush_bits(strm);
+	//copy_32b(crc);
+	//copy_32b(buflen);
+	//dump_outbuf();
+	//fprintf(stderr, "Saved between first and optimal: %d\n", saved);
+}
+
+
+/* Tries to to send the gzip header for stream <strm> if there is enough room
+ * in buffer <buf>. When it's done, the stream state is updated to SLZ_ST_EOB.
+ * It returns the number of bytes emitted, either 0 or the full header.
+ */
+int slz_send_gzip_header(struct slz_stream *strm, unsigned char *buf, int room)
+{
+	if (room < sizeof(gzip_hdr))
+		return 0;
+
+	memcpy(buf, gzip_hdr, sizeof(gzip_hdr));
+	strm->state = SLZ_ST_EOB;
+	return sizeof(gzip_hdr);
+}
+
+/* Initializes stream <strm> and tries to send the header into <buf> if there
+ * is enough room. Returns the number of bytes emitted, either 0 or the header
+ * size.
+ */
+int slz_init(struct slz_stream *strm, unsigned char *buf, int room)
+{
+	strm->state = SLZ_ST_INIT;
+	strm->crc32 = 0;
+	strm->ilen  = 0;
+	strm->qbits = 0;
+	strm->queue = 0;
+	return slz_send_gzip_header(strm, buf, room);
+}
+
+/* Tries to flush pending bits and to send the gzip trailer for stream <strm>
+ * if there is enough room in buffer <buf>. When it's done, the stream state is
+ * updated to SLZ_ST_END. It returns the number of bytes emitted, either 0 or
+ * the full trailer.
+ */
+int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
+{
+	long last;
+
+	if (room < 8)
+		return 0;
+
+	last = outlen;
+	flush_bits(strm);
+	copy_32b(strm->crc32);
+	copy_32b(strm->ilen);
 	dump_outbuf();
-	fprintf(stderr, "Saved between first and optimal: %d\n", saved);
+	strm->state = SLZ_ST_END;
+	return outlen - last;
 }
 
 
@@ -908,6 +971,9 @@ int main(int argc, char **argv)
 {
 	int loops = 1;
 	int totin = 0;
+	int len;
+	struct slz_stream strm;
+	char *outbuf;
 
 	if (argc > 1)
 		bufsize = atoi(argv[1]);
@@ -923,6 +989,12 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	outbuf = calloc(1, bufsize);
+	if (!outbuf) {
+		perror("calloc");
+		exit(1);
+	}
+
 	buflen = read(0, buffer, bufsize);
 	if (buflen < 0) {
 		perror("read");
@@ -931,9 +1003,12 @@ int main(int argc, char **argv)
 
 	totin = buflen * loops;
 	while (loops--) {
-		write(1, gzip_hdr, sizeof(gzip_hdr));
+		//write(1, gzip_hdr, sizeof(gzip_hdr));
+		len = slz_init(&strm, outbuf, bufsize);
+		write(1, outbuf, len);
 		memset(refs, 0, sizeof(refs));
-		encode(buffer, buflen);
+		encode(&strm, buffer, buflen);
+		slz_finish(&strm, outbuf, bufsize);
 	}
 	//fprintf(stderr, "totin=%d lit=%d ref=%d\n", totin, lit, ref);
 	return 0;
