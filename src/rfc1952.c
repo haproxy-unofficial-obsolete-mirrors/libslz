@@ -372,8 +372,6 @@ static const uint16_t fixed_huff[288] = {
 static uint32_t crc32Lookup[4][256];
 static const uint32_t *crc_table = crc32Lookup[0];
 
-static uint32_t btype; /* current block type (0..3). initially 0 (no comp). */
-
 static char outbuf[65536 * 2];
 static int  outsize = 65536;
 static int  outlen;
@@ -383,7 +381,8 @@ enum slz_state {
 	SLZ_ST_INIT,  /* stream initialized */
 	SLZ_ST_EOB,   /* header or end of block already sent */
 	SLZ_ST_FIXED, /* inside a fixed huffman sequence */
-	SLZ_ST_LAST,  /* end of block, BFINAL sent */
+	SLZ_ST_LAST,  /* last block, BFINAL sent */
+	SLZ_ST_DONE,  /* BFINAL+EOB sent BFINAL */
 	SLZ_ST_END    /* end sent (BFINAL, EOB, CRC + len) */
 };
 
@@ -635,9 +634,10 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 		more = 1;
 	}
 
-	if (btype)
+	if (strm->state != SLZ_ST_EOB)
 		send_eob(strm);
-	btype = 0;
+
+	strm->state = more ? SLZ_ST_EOB : SLZ_ST_DONE;
 
 	//fprintf(stderr, "len=%d more=%d\n", len, more);
 	enqueue(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
@@ -664,12 +664,12 @@ static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *
 	if (len <= 0)
 		return 0;
 
-	if (btype != 1 || !more) {
-		if (btype)
+	if (strm->state == SLZ_ST_EOB || !more) {
+		if (strm->state != SLZ_ST_EOB)
 			send_eob(strm);
+		strm->state = more ? SLZ_ST_FIXED : SLZ_ST_LAST;
 		//fprintf(stderr, "len=%d more=%d\n", len, more);
 		enqueue(strm, 2 + !more, 3); // BFINAL = !more ; BTYPE = 01
-		btype = 1;
 	}
 
 	pos = 0;
@@ -808,7 +808,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* found a matching entry */
 
 			/* first, copy pending literals */
-			fprintf(stderr, "dumping %d literals from %ld\n", plit, pos - 1 - plit);
+			fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
 			while (plit) {
 				/* Huffman encoding requires 9 bits for octets 144..255, so this
 				 * is a waste of space for binary data. Switching between Huffman
@@ -851,11 +851,9 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* use mode 01 - fixed huffman */
 			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
 
-			if (btype != 1) {
-				if (btype > 1)
-					send_eob(strm);
+			if (strm->state == SLZ_ST_EOB) {
+				strm->state = SLZ_ST_FIXED;
 				enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
-				btype = 1;
 			}
 
 			/* copy the length first */
@@ -901,13 +899,20 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 
 	/* now copy remaining literals or mark the end */
 	if (!plit) {
-		if (btype)
+		fprintf(stderr, "plit=0, st=%d\n", strm->state);
+		if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
+			strm->state = (strm->state == SLZ_ST_LAST) ? SLZ_ST_DONE : SLZ_ST_EOB;
 			send_eob(strm);
+		}
 		//flush_bits();
 		//len = copy_lit(NULL, 0, 0);
 		/* BTYPE=1, BFINAL=1 */
-		enqueue(strm, 3, 3);
-		send_eob(strm);
+		fprintf(stderr, "done now => st=%d\n", strm->state);
+		if (strm->state != SLZ_ST_DONE) {
+			enqueue(strm, 3, 3);
+			send_eob(strm);
+			strm->state = SLZ_ST_DONE;
+		}
 	}
 	else while (plit) {
 		//flush_bits();
@@ -915,10 +920,13 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			len = copy_lit(strm, in + pos - 1 - plit, plit, 0);
 		else
 			len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
+		fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
-		if (btype)
+		if (strm->state != SLZ_ST_DONE) {
+			strm->state = SLZ_ST_DONE;
 			send_eob(strm);
+		}
 		if (outlen > 32768)
 			dump_outbuf();
 	}
