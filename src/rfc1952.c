@@ -740,6 +740,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	uint32_t crc = strm->crc32;
 	uint32_t len;
 	uint32_t plit = 0;
+	uint32_t bit9 = 0;
 	uint32_t bits, code;
 	uint32_t saved = 0;
 
@@ -809,13 +810,24 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* first, copy pending literals */
 			fprintf(stderr, "dumping %d literals from %ld\n", plit, pos - 1 - plit);
 			while (plit) {
-				//flush_bits();
-				len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 1);
+				/* Huffman encoding requires 9 bits for octets 144..255, so this
+				 * is a waste of space for binary data. Switching between Huffman
+				 * and no-comp then huffman consumes 52 bits (7 for EOB + 3 for
+				 * block type + 7 for alignment + 32 for LEN+NLEN + 3 for next
+				 * block. Only use plain literals if there are more than 52 bits
+				 * to save then.
+				 */
+				if (bit9 >= 52)
+					len = copy_lit(strm, in + pos - 1 - plit, plit, 1);
+				else
+					len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 1);
+
 				crc = update_crc(crc, in + pos - 1 - plit, len);
 				plit -= len;
 				//if (outlen > 32768)
 					dump_outbuf();
 			}
+			bit9 = 0;
 
 			mlen = memmatch(in + pos, in + last + 1, rem);
 			//mlen = 4 + memmatch(in + pos + 4, in + last + 5, rem);
@@ -882,6 +894,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				break;
 			fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
 			plit++;
+			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
 		}
 	}
@@ -898,7 +911,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	}
 	else while (plit) {
 		//flush_bits();
-		len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
+		if (bit9 >= 52)
+			len = copy_lit(strm, in + pos - 1 - plit, plit, 0);
+		else
+			len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
 		if (btype)
