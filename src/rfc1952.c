@@ -611,7 +611,7 @@ static inline void send_huff(struct slz_stream *strm, uint32_t code)
 
 static inline void send_eob(struct slz_stream *strm)
 {
-	fprintf(stderr, "eob\n");
+	//fprintf(stderr, "eob\n");
 	/* end of block = 256 */
 	send_huff(strm, 256);
 }
@@ -809,7 +809,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* found a matching entry */
 
 			/* first, copy pending literals */
-			fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
+			//fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
 			while (plit) {
 				/* Huffman encoding requires 9 bits for octets 144..255, so this
 				 * is a waste of space for binary data. Switching between Huffman
@@ -830,10 +830,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			}
 			bit9 = 0;
 
-			fprintf(stderr, "found [%ld]:0x%06x == [%d=@-%ld] %ld bytes, rem=%ld\n",
-			       pos - 1, word,
-			       last, pos - 1 - last,
-			       mlen + 1, rem);
+			//fprintf(stderr, "found [%ld]:0x%06x == [%d=@-%ld] %ld bytes, rem=%ld\n",
+			//        pos - 1, word,
+			//        last, pos - 1 - last,
+			//        mlen + 1, rem);
 
 			/* cannot encode a length larger than 258 bytes */
 			if (mlen >= 257)
@@ -848,7 +848,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			//pos += mlen;
 
 			/* use mode 01 - fixed huffman */
-			fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
+			//fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
 
 			if (strm->state == SLZ_ST_EOB) {
 				strm->state = SLZ_ST_FIXED;
@@ -864,8 +864,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			if (bits)
 				enqueue(strm, word >> 3, bits);
 
-			fprintf(stderr, "mlen=%ld code=%d bits=%d word=%d\n",
-				mlen, code, bits, word);
+			//fprintf(stderr, "mlen=%ld code=%d bits=%d word=%d\n",
+			//	mlen, code, bits, word);
 
 			/* then copy the distance : pos - last */
 			code = dist_to_code(pos - last);
@@ -878,18 +878,18 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			if (bits)
 				enqueue(strm, ((pos - last) - 1) & ((1 << bits) - 1), bits);
 
-			fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
-				pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
+			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
+			//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
 
-			fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
+			//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
 			if (outlen > 32768)
 				dump_outbuf();
 		}
 		else {
 			if (rem < 0)
 				break;
-			fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
+			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
@@ -898,7 +898,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 
 	/* now copy remaining literals or mark the end */
 	if (!plit) {
-		fprintf(stderr, "plit=0, st=%d\n", strm->state);
+		//fprintf(stderr, "plit=0, st=%d\n", strm->state);
 		if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
 			strm->state = (strm->state == SLZ_ST_LAST) ? SLZ_ST_DONE : SLZ_ST_EOB;
 			send_eob(strm);
@@ -906,7 +906,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		//flush_bits();
 		//len = copy_lit(NULL, 0, 0);
 		/* BTYPE=1, BFINAL=1 */
-		fprintf(stderr, "done now => st=%d\n", strm->state);
+		//fprintf(stderr, "done now => st=%d\n", strm->state);
 		if (strm->state != SLZ_ST_DONE) {
 			enqueue(strm, 3, 3);
 			send_eob(strm);
@@ -919,7 +919,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			len = copy_lit(strm, in + pos - 1 - plit, plit, 0);
 		else
 			len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
-		fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
+		//fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
 		crc = update_crc(crc, in + pos - 1 - plit, len);
 		plit -= len;
 		if (strm->state != SLZ_ST_DONE) {
