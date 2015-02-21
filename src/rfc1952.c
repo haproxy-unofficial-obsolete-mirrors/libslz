@@ -803,9 +803,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
 #endif
 
-		if (last < pos - 1 &&
-		    pos - last <= 32768 &&
-		    (uint32_t)ent == word && rem >= 2 &&
+		if (pos - last <= 32768 &&
+		    last < pos - 1 &&
+		    rem >= 2 &&
+		    (uint32_t)ent == word &&
 		    (mlen = memmatch(in + pos, in + last + 1, rem)) >= 2) {
 			/* found a matching entry */
 
