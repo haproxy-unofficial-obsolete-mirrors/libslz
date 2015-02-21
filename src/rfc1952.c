@@ -714,11 +714,20 @@ static inline uint32_t hash(uint32_t a)
 	//return (a * 2654435761U) >> (32 - HASH_BITS); // used by lz4
 }
 
+/* warning! this optimized version may read up to 3 bytes past <max> */
 static inline long memmatch(const char *a, const char *b, long max)
 {
 	long len;
 
 	len = 0;
+	while (1) {
+		if (*(uint32_t *)&a[len] != *(uint32_t *)&b[len])
+			break;
+		len += 4;
+		if (len >= max)
+			return max;
+	}
+
 	do {
 		if (a[len] != b[len])
 			break;
