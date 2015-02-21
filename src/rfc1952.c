@@ -756,8 +756,9 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		pos++;
 		rem--;
 		ent = refs[h];
-		last = ent >> 32;
-		refs[h] = (((uint64_t)(pos - 1)) << 32) + word;
+		last = ent;
+		refs[h] = ((uint64_t)(pos - 1)) + ((uint64_t)word << 32);
+		ent >>= 32;
 
 #if FIND_OPTIMAL_MATCH
 		/* Experimental code to see what could be saved with an ideal
