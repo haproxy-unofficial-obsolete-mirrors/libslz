@@ -804,7 +804,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 
 		if (last < pos - 1 &&
 		    pos - last <= 32768 &&
-		    (uint32_t)ent == word && rem >= 2) {
+		    (uint32_t)ent == word && rem >= 2 &&
+		    (mlen = memmatch(in + pos, in + last + 1, rem)) >= 2) {
 			/* found a matching entry */
 
 			/* first, copy pending literals */
@@ -829,8 +830,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			}
 			bit9 = 0;
 
-			mlen = memmatch(in + pos, in + last + 1, rem);
-			//mlen = 4 + memmatch(in + pos + 4, in + last + 5, rem);
 			fprintf(stderr, "found [%ld]:0x%06x == [%d=@-%ld] %ld bytes, rem=%ld\n",
 			       pos - 1, word,
 			       last, pos - 1 - last,
