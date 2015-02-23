@@ -944,18 +944,43 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			enqueue(strm, code & 0xFFFF, code >> 16);
 
 			/* then copy the distance : pos - last */
-
-			// TODO: implement direct mapping (no dist_code)
-			code = dist_to_code(pos - last);
+			switch (pos - last) {
+			case 24577 ... 32768: code = 29; bits = 13; break;
+			case 16385 ... 24576: code = 28; bits = 13; break;
+			case 12289 ... 16384: code = 27; bits = 12; break;
+			case  8193 ... 12288: code = 26; bits = 12; break;
+			case  6145 ...  8192: code = 25; bits = 11; break;
+			case  4097 ...  6144: code = 24; bits = 11; break;
+			case  3073 ...  4096: code = 23; bits = 10; break;
+			case  2049 ...  3072: code = 22; bits = 10; break;
+			case  1537 ...  2048: code = 21; bits =  9; break;
+			case  1025 ...  1536: code = 20; bits =  9; break;
+			case   769 ...  1024: code = 19; bits =  8; break;
+			case   513 ...   768: code = 18; bits =  8; break;
+			case   385 ...   512: code = 17; bits =  7; break;
+			case   257 ...   384: code = 16; bits =  7; break;
+			case   193 ...   256: code = 15; bits =  6; break;
+			case   129 ...   192: code = 14; bits =  6; break;
+			case    97 ...   128: code = 13; bits =  5; break;
+			case    65 ...    96: code = 12; bits =  5; break;
+			case    49 ...    64: code = 11; bits =  4; break;
+			case    33 ...    48: code = 10; bits =  4; break;
+			case    25 ...    32: code =  9; bits =  3; break;
+			case    17 ...    24: code =  8; bits =  3; break;
+			case    13 ...    16: code =  7; bits =  2; break;
+			case     9 ...    12: code =  6; bits =  2; break;
+			case     7 ...     8: code =  5; bits =  1; break;
+			case     5 ...     6: code =  4; bits =  1; break;
+			case     4          : code =  3; bits =  0; break;
+			case     3          : code =  2; bits =  0; break;
+			case     2          : code =  1; bits =  0; break;
+			case     1          : code =  0; bits =  0; break;
+			case     0          : code =  0; bits =  0; break;
+			}
 
 			/* in fixed huffman mode, dist is fixed 5 bits */
 			word = 5;
-
-			bits = code >> 1;
 			code = dist_codes[code];
-
-			if (bits)
-				bits--;
 
 			if (bits) {
 				code |= (((pos - last) - 1) & ((1 << bits) - 1)) << 5;
