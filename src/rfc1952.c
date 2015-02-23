@@ -947,14 +947,21 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 
 			// TODO: implement direct mapping (no dist_code)
 			code = dist_to_code(pos - last);
-			bits = code >> 1;
-			if (bits)
-				bits--;
+
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			enqueue(strm, dist_codes[code], 5);
+			word = 5;
+
+			bits = code >> 1;
+			code = dist_codes[code];
 
 			if (bits)
-				enqueue(strm, ((pos - last) - 1) & ((1 << bits) - 1), bits);
+				bits--;
+
+			if (bits) {
+				code |= (((pos - last) - 1) & ((1 << bits) - 1)) << 5;
+				word += bits;
+			}
+			enqueue(strm, code, word);
 
 			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 			//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
