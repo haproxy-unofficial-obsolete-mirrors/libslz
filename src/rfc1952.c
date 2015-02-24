@@ -616,10 +616,10 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 {
 	strm->queue += x << strm->qbits;
 	strm->qbits += xbits;
-	if (strm->qbits < 8)
-		return;
-
 	if (strm->qbits < 16) {
+		if (strm->qbits < 8)
+			return;
+
 		/* usual case */
 		outbuf[outlen] = strm->queue;
 		outlen += 1;
