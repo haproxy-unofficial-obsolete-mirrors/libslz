@@ -946,41 +946,94 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* then copy the distance : pos - last */
 			word = pos - last - 1;
 
-			switch (word) {
-			case 24576 ... 32767: word &= 0x1fff; code = 29; bits = 13; break;
-			case 16384 ... 24575: word &= 0x1fff; code = 28; bits = 13; break;
-			case 12288 ... 16383: word &= 0x0fff; code = 27; bits = 12; break;
-			case  8192 ... 12287: word &= 0x0fff; code = 26; bits = 12; break;
-			case  6144 ...  8191: word &= 0x07ff; code = 25; bits = 11; break;
-			case  4096 ...  6143: word &= 0x07ff; code = 24; bits = 11; break;
-			case  3072 ...  4095: word &= 0x03ff; code = 23; bits = 10; break;
-			case  2048 ...  3071: word &= 0x03ff; code = 22; bits = 10; break;
-			case  1536 ...  2047: word &= 0x01ff; code = 21; bits =  9; break;
-			case  1024 ...  1535: word &= 0x01ff; code = 20; bits =  9; break;
-			case   768 ...  1023: word &= 0x00ff; code = 19; bits =  8; break;
-			case   512 ...   767: word &= 0x00ff; code = 18; bits =  8; break;
-			case   384 ...   511: word &= 0x007f; code = 17; bits =  7; break;
-			case   256 ...   383: word &= 0x007f; code = 16; bits =  7; break;
-			case   192 ...   255: word &= 0x003f; code = 15; bits =  6; break;
-			case   128 ...   191: word &= 0x003f; code = 14; bits =  6; break;
-			case    96 ...   127: word &= 0x001f; code = 13; bits =  5; break;
-			case    64 ...    95: word &= 0x001f; code = 12; bits =  5; break;
-			case    48 ...    63: word &= 0x000f; code = 11; bits =  4; break;
-			case    32 ...    47: word &= 0x000f; code = 10; bits =  4; break;
-			case    24 ...    31: word &= 0x0007; code =  9; bits =  3; break;
-			case    16 ...    23: word &= 0x0007; code =  8; bits =  3; break;
-			case    12 ...    15: word &= 0x0003; code =  7; bits =  2; break;
-			case     8 ...    11: word &= 0x0003; code =  6; bits =  2; break;
-			case     6 ...     7: word &= 0x0001; code =  5; bits =  1; break;
-			case     4 ...     5: word &= 0x0001; code =  4; bits =  1; break;
-			case     3          : word &= 0x0000; code =  3; bits =  0; break;
-			case     2          : word &= 0x0000; code =  2; bits =  0; break;
-			case     1          : word &= 0x0000; code =  1; bits =  0; break;
-			case     0          : word &= 0x0000; code =  0; bits =  0; break;
+			if (__builtin_expect(word >= 256, 0)) {
+				if (word >= 4096) { /* 4096..32767 */
+					if (word >= 16384) { /* 16384..32767 */
+						word &= 0x1fff;
+						bits = 13;
+						code = (word >= 24576) ? 23 : 7;
+					} else { /* 4096..16383 */
+						if (word >= 8192) { /* 8192..16383 */
+							word &= 0x0fff;
+							bits = 12;
+							code = (word >= 12288) ? 27 : 11;
+						} else { /* 4096..8191 */
+							word &= 0x07ff;
+							bits = 11;
+							code = (word >= 6144) ? 19 : 3;
+						}
+					}
+				} else { /* 256..4095 */
+					if (word >= 1024) { /* 1024..4095 */
+						if (word >= 2048) { /* 2048..4095 */
+							word &= 0x03ff;
+							bits = 10;
+							code = (word >= 3072) ? 29 : 13;
+						} else { /* 1024..2047 */
+							word &= 0x01ff;
+							bits = 9;
+							code = (word >= 1536) ? 21 : 5;
+						}
+					} else { /* 256..1023 */
+						if (word >= 512) { /* 512..1023 */
+							word &= 0x00ff;
+							bits = 8;
+							code = (word >= 768) ? 25 : 9;
+						} else { /* 256..511 */
+							word &= 0x007f;
+							bits = 7;
+							code = (word >= 384) ? 17 : 1;
+						}
+					}
+				}
+			} else { /* 0..255 */
+				if (word >= 16) { /* 16..255 */
+					if (word >= 64) { /* 64..255 */
+						if (word >= 128) { /* 128..255 */
+							word &= 0x003f;
+							bits = 6;
+							code = (word >= 192) ? 30 : 14;
+						} else { /* 64..127 */
+							word &= 0x001f;
+							bits = 5;
+							code = (word >= 96) ? 22 : 6;
+						}
+					} else { /* 16..63 */
+						if (word >= 32) { /* 32..63 */
+							word &= 0x000f;
+							bits = 4;
+							code = (word >= 48) ? 26 : 10;
+						} else { /* 16..31 */
+							word &= 0x0007;
+							bits = 3;
+							code = (word >= 24) ? 18 : 2;
+						}
+					}
+				} else { /* 0..15 */
+					if (word >= 4) { /* 4..15 */
+						if (word >= 8) { /* 8..15 */
+							word &= 0x0003;
+							bits = 2;
+							code = (word >= 12) ? 28 : 12;
+						} else { /* 4..7 */
+							word &= 0x0001;
+							bits = 1;
+							code = (word >= 6) ? 20 : 4;
+						}
+					} else { /* 0..3 */
+						word &= 0x0000;
+						bits = 0;
+						if (word >= 2) { /* 2..3 */
+							code = (word >= 3) ? 24 : 8;
+						} else { /* 0..1 */
+							code = (word >= 1) ? 16 : 0;
+						}
+					}
+				}
 			}
 
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			code = dist_codes[code] + (word << 5);
+			code += (word << 5);
 			enqueue(strm, code, bits + 5);
 
 			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
