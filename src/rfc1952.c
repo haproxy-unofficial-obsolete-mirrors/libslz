@@ -947,44 +947,40 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			word = pos - last - 1;
 
 			switch (word) {
-			case 24576 ... 32767: code = 29; bits = 13; break;
-			case 16384 ... 24575: code = 28; bits = 13; break;
-			case 12288 ... 16383: code = 27; bits = 12; break;
-			case  8192 ... 12287: code = 26; bits = 12; break;
-			case  6144 ...  8191: code = 25; bits = 11; break;
-			case  4096 ...  6143: code = 24; bits = 11; break;
-			case  3072 ...  4095: code = 23; bits = 10; break;
-			case  2048 ...  3071: code = 22; bits = 10; break;
-			case  1536 ...  2047: code = 21; bits =  9; break;
-			case  1024 ...  1535: code = 20; bits =  9; break;
-			case   768 ...  1023: code = 19; bits =  8; break;
-			case   512 ...   767: code = 18; bits =  8; break;
-			case   384 ...   511: code = 17; bits =  7; break;
-			case   256 ...   383: code = 16; bits =  7; break;
-			case   192 ...   255: code = 15; bits =  6; break;
-			case   128 ...   191: code = 14; bits =  6; break;
-			case    96 ...   127: code = 13; bits =  5; break;
-			case    64 ...    95: code = 12; bits =  5; break;
-			case    48 ...    63: code = 11; bits =  4; break;
-			case    32 ...    47: code = 10; bits =  4; break;
-			case    24 ...    31: code =  9; bits =  3; break;
-			case    16 ...    23: code =  8; bits =  3; break;
-			case    12 ...    15: code =  7; bits =  2; break;
-			case     8 ...    11: code =  6; bits =  2; break;
-			case     6 ...     7: code =  5; bits =  1; break;
-			case     4 ...     5: code =  4; bits =  1; break;
-			case     3          : code =  3; bits =  0; break;
-			case     2          : code =  2; bits =  0; break;
-			case     1          : code =  1; bits =  0; break;
-			case     0          : code =  0; bits =  0; break;
+			case 24576 ... 32767: word &= 0x1fff; code = 29; bits = 13; break;
+			case 16384 ... 24575: word &= 0x1fff; code = 28; bits = 13; break;
+			case 12288 ... 16383: word &= 0x0fff; code = 27; bits = 12; break;
+			case  8192 ... 12287: word &= 0x0fff; code = 26; bits = 12; break;
+			case  6144 ...  8191: word &= 0x07ff; code = 25; bits = 11; break;
+			case  4096 ...  6143: word &= 0x07ff; code = 24; bits = 11; break;
+			case  3072 ...  4095: word &= 0x03ff; code = 23; bits = 10; break;
+			case  2048 ...  3071: word &= 0x03ff; code = 22; bits = 10; break;
+			case  1536 ...  2047: word &= 0x01ff; code = 21; bits =  9; break;
+			case  1024 ...  1535: word &= 0x01ff; code = 20; bits =  9; break;
+			case   768 ...  1023: word &= 0x00ff; code = 19; bits =  8; break;
+			case   512 ...   767: word &= 0x00ff; code = 18; bits =  8; break;
+			case   384 ...   511: word &= 0x007f; code = 17; bits =  7; break;
+			case   256 ...   383: word &= 0x007f; code = 16; bits =  7; break;
+			case   192 ...   255: word &= 0x003f; code = 15; bits =  6; break;
+			case   128 ...   191: word &= 0x003f; code = 14; bits =  6; break;
+			case    96 ...   127: word &= 0x001f; code = 13; bits =  5; break;
+			case    64 ...    95: word &= 0x001f; code = 12; bits =  5; break;
+			case    48 ...    63: word &= 0x000f; code = 11; bits =  4; break;
+			case    32 ...    47: word &= 0x000f; code = 10; bits =  4; break;
+			case    24 ...    31: word &= 0x0007; code =  9; bits =  3; break;
+			case    16 ...    23: word &= 0x0007; code =  8; bits =  3; break;
+			case    12 ...    15: word &= 0x0003; code =  7; bits =  2; break;
+			case     8 ...    11: word &= 0x0003; code =  6; bits =  2; break;
+			case     6 ...     7: word &= 0x0001; code =  5; bits =  1; break;
+			case     4 ...     5: word &= 0x0001; code =  4; bits =  1; break;
+			case     3          : word &= 0x0000; code =  3; bits =  0; break;
+			case     2          : word &= 0x0000; code =  2; bits =  0; break;
+			case     1          : word &= 0x0000; code =  1; bits =  0; break;
+			case     0          : word &= 0x0000; code =  0; bits =  0; break;
 			}
 
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			code = dist_codes[code];
-
-			if (bits)
-				code |= (word & ((1 << bits) - 1)) << 5;
-
+			code = dist_codes[code] + (word << 5);
 			enqueue(strm, code, bits + 5);
 
 			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
