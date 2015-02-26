@@ -444,6 +444,7 @@ static const uint32_t len_fh[259] = {
  */
 static uint32_t crc32Lookup[4][256];
 static const uint32_t *crc_table = crc32Lookup[0];
+static uint32_t fh_dist_table[2048];
 
 static char outbuf[65536 * 2];
 static int  outsize = 65536;
@@ -946,95 +947,39 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* then copy the distance : pos - last */
 			word = pos - last - 1;
 
-			if (__builtin_expect(word >= 256, 0)) {
-				if (word >= 4096) { /* 4096..32767 */
+			if (__builtin_expect(word >= 2048, 0)) {
+				if (word >= 8192) { /* 8192..32767 */
 					if (word >= 16384) { /* 16384..32767 */
-						word &= 0x1fff;
-						bits = 13;
 						code = (word >= 24576) ? 23 : 7;
-					} else { /* 4096..16383 */
-						if (word >= 8192) { /* 8192..16383 */
-							word &= 0x0fff;
-							bits = 12;
-							code = (word >= 12288) ? 27 : 11;
-						} else { /* 4096..8191 */
-							word &= 0x07ff;
-							bits = 11;
-							code = (word >= 6144) ? 19 : 3;
-						}
+						word &= 0x1fff;
+						bits = 18;
+					} else { /* 8192..16383 */
+						code = (word >= 12288) ? 27 : 11;
+						word &= 0x0fff;
+						bits = 17;
 					}
-				} else { /* 256..4095 */
-					if (word >= 1024) { /* 1024..4095 */
-						if (word >= 2048) { /* 2048..4095 */
-							word &= 0x03ff;
-							bits = 10;
-							code = (word >= 3072) ? 29 : 13;
-						} else { /* 1024..2047 */
-							word &= 0x01ff;
-							bits = 9;
-							code = (word >= 1536) ? 21 : 5;
-						}
-					} else { /* 256..1023 */
-						if (word >= 512) { /* 512..1023 */
-							word &= 0x00ff;
-							bits = 8;
-							code = (word >= 768) ? 25 : 9;
-						} else { /* 256..511 */
-							word &= 0x007f;
-							bits = 7;
-							code = (word >= 384) ? 17 : 1;
-						}
+				} else {
+					if (word >= 4096) { /* 4096..8191 */
+						code = (word >= 6144) ? 19 : 3;
+						word &= 0x07ff;
+						bits = 16;
+					} else { /* 2048..4095 */
+						code = (word >= 3072) ? 29 : 13;
+						word &= 0x03ff;
+						bits = 15;
 					}
 				}
-			} else { /* 0..255 */
-				if (word >= 16) { /* 16..255 */
-					if (word >= 64) { /* 64..255 */
-						if (word >= 128) { /* 128..255 */
-							word &= 0x003f;
-							bits = 6;
-							code = (word >= 192) ? 30 : 14;
-						} else { /* 64..127 */
-							word &= 0x001f;
-							bits = 5;
-							code = (word >= 96) ? 22 : 6;
-						}
-					} else { /* 16..63 */
-						if (word >= 32) { /* 32..63 */
-							word &= 0x000f;
-							bits = 4;
-							code = (word >= 48) ? 26 : 10;
-						} else { /* 16..31 */
-							word &= 0x0007;
-							bits = 3;
-							code = (word >= 24) ? 18 : 2;
-						}
-					}
-				} else { /* 0..15 */
-					if (word >= 4) { /* 4..15 */
-						if (word >= 8) { /* 8..15 */
-							word &= 0x0003;
-							bits = 2;
-							code = (word >= 12) ? 28 : 12;
-						} else { /* 4..7 */
-							word &= 0x0001;
-							bits = 1;
-							code = (word >= 6) ? 20 : 4;
-						}
-					} else { /* 0..3 */
-						word &= 0x0000;
-						bits = 0;
-						if (word >= 2) { /* 2..3 */
-							code = (word >= 3) ? 24 : 8;
-						} else { /* 0..1 */
-							code = (word >= 1) ? 16 : 0;
-						}
-					}
-				}
+				code += (word << 5);
+			}
+			else {
+				/* direct mapping of dist->huffman code */
+				code = fh_dist_table[word];
+				bits = code & 0x1f;
+				code >>= 5;
 			}
 
 			/* in fixed huffman mode, dist is fixed 5 bits */
-			code += (word << 5);
-			enqueue(strm, code, bits + 5);
+			enqueue(strm, code, bits);
 
 			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 			//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
@@ -1148,6 +1093,25 @@ int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
 }
 
 
+
+void prepare_dist_table()
+{
+	uint32_t dist;
+	uint32_t code;
+	uint32_t bits;
+
+	for (dist = 0; dist < sizeof(fh_dist_table) / sizeof(*fh_dist_table); dist++) {
+		code = dist_to_code(dist + 1);
+		bits = code >> 1;
+		if (bits)
+			bits--;
+
+		code = dist_codes[code];
+		code += (dist & ((1 << bits) - 1)) << 5;
+		fh_dist_table[dist] = (code << 5) + bits + 5;
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int loops = 1;
@@ -1163,6 +1127,7 @@ int main(int argc, char **argv)
 		loops = atoi(argv[2]);
 
 	make_crc_table();
+	prepare_dist_table();
 
 	buffer = calloc(1, bufsize);
 	if (!buffer) {
