@@ -444,7 +444,7 @@ static const uint32_t len_fh[259] = {
  */
 static uint32_t crc32Lookup[4][256];
 static const uint32_t *crc_table = crc32Lookup[0];
-static uint32_t fh_dist_table[2048];
+static uint32_t fh_dist_table[32768];
 
 static char outbuf[65536 * 2];
 static int  outsize = 65536;
@@ -947,36 +947,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			/* then copy the distance : pos - last */
 			word = pos - last - 1;
 
-			if (__builtin_expect(word >= 2048, 0)) {
-				if (word >= 8192) { /* 8192..32767 */
-					if (word >= 16384) { /* 16384..32767 */
-						code = (word >= 24576) ? 23 : 7;
-						word &= 0x1fff;
-						bits = 18;
-					} else { /* 8192..16383 */
-						code = (word >= 12288) ? 27 : 11;
-						word &= 0x0fff;
-						bits = 17;
-					}
-				} else {
-					if (word >= 4096) { /* 4096..8191 */
-						code = (word >= 6144) ? 19 : 3;
-						word &= 0x07ff;
-						bits = 16;
-					} else { /* 2048..4095 */
-						code = (word >= 3072) ? 29 : 13;
-						word &= 0x03ff;
-						bits = 15;
-					}
-				}
-				code += (word << 5);
-			}
-			else {
-				/* direct mapping of dist->huffman code */
-				code = fh_dist_table[word];
-				bits = code & 0x1f;
-				code >>= 5;
-			}
+			/* direct mapping of dist->huffman code */
+			code = fh_dist_table[word];
+			bits = code & 0x1f;
+			code >>= 5;
 
 			/* in fixed huffman mode, dist is fixed 5 bits */
 			enqueue(strm, code, bits);
