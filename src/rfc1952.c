@@ -628,8 +628,11 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 		return;
 	}
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
-	outbuf[outlen]     = strm->queue;
-	outbuf[outlen + 1] = strm->queue >> 8;
+
+	//outbuf[outlen]     = strm->queue;
+	//outbuf[outlen + 1] = strm->queue >> 8;
+	// fast unaligned access for little endian below
+	*(uint16_t *)(outbuf + outlen) = strm->queue;
 	outlen += 2;
 	strm->queue >>= 16;
 	strm->qbits -= 16;
