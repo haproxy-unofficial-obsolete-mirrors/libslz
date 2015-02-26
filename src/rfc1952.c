@@ -617,15 +617,14 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 {
 	strm->queue += x << strm->qbits;
 	strm->qbits += xbits;
-	if (strm->qbits < 16) {
-		if (strm->qbits < 8)
-			return;
-
-		/* usual case */
-		outbuf[outlen] = strm->queue;
-		outlen += 1;
-		strm->queue >>= 8;
-		strm->qbits -= 8;
+	if (__builtin_expect(strm->qbits, 0) < 16) {
+		if (strm->qbits >= 8) {
+			/* usual case */
+			strm->qbits -= 8;
+			outbuf[outlen] = strm->queue;
+			strm->queue >>= 8;
+			outlen += 1;
+		}
 		return;
 	}
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
