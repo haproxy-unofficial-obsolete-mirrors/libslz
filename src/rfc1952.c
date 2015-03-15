@@ -845,12 +845,13 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		//word &= 0x00FFFFFF;
 		//printf("%d %08x\n", pos, word);
 		h = hash(word);
-		__builtin_prefetch(refs + h);
+		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
+		__builtin_prefetch(refs + h, 1, 0);
 		rem--;
 		ent = refs[h];
-		refs[h] = ((uint64_t)pos) + ((uint64_t)word << 32);
 		last = (uint32_t)ent;
 		ent >>= 32;
+		refs[h] = ((uint64_t)pos) + ((uint64_t)word << 32);
 
 #if FIND_OPTIMAL_MATCH
 		/* Experimental code to see what could be saved with an ideal
