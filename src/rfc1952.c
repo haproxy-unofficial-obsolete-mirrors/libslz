@@ -500,6 +500,14 @@ void make_crc_table(void)
 	}
 }
 
+static inline uint32_t crc32_char(uint32_t crc, uint8_t x)
+{
+	uint32_t c = ~crc;
+
+	c = crc_table[(c & 0xff) ^ x] ^ (c >> 8);
+	return ~c;
+}
+
 // from RFC1952 : about 480 MB/s
 uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 {
@@ -847,6 +855,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		h = hash(word);
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
 		__builtin_prefetch(refs + h, 1, 0);
+		crc = crc32_char(crc, word);
 		rem--;
 		ent = refs[h];
 		last = (uint32_t)ent;
@@ -917,7 +926,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				else
 					len = copy_lit_huff(strm, in + pos - plit, plit, 1);
 
-				crc = update_crc(crc, in + pos - plit, len);
+				//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 				plit -= len;
 				//if (outlen > 32768)
 					dump_outbuf();
@@ -937,7 +946,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			rem -= mlen;
 			mlen++;
 
-			crc = update_crc(crc, in + pos, mlen);
+			//crc = update_crc(crc, in + pos, mlen); // if CRC is done per block
+			crc = update_crc(crc, in + pos + 1, mlen - 1);
 			//pos += mlen;
 
 			/* use mode 01 - fixed huffman */
@@ -984,6 +994,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		plit += rem;
 		lit  += rem;
 		do {
+			crc = crc32_char(crc, in[pos]);
 			bit9 += ((unsigned char)in[pos++] >= 144);
 		} while (--rem);
 	}
@@ -1012,7 +1023,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		else
 			len = copy_lit_huff(strm, in + pos - plit, plit, 0);
 		//fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
-		crc = update_crc(crc, in + pos - plit, len);
+		//crc = update_crc(crc, in + pos - plit, len);
 		plit -= len;
 		if (strm->state != SLZ_ST_DONE) {
 			strm->state = SLZ_ST_DONE;
