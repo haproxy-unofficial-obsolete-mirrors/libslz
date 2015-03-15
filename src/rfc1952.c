@@ -826,7 +826,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	uint32_t saved = 0;
 
 	//printf("len = %d\n", ilen);
-	while (1) {
+	while (rem >= 4) {
 		//word = (word << 8) + (unsigned char)in[pos];
 		//word = ((unsigned char)in[pos] << 24) + (word >> 8);
 		word = *(uint32_t *)&in[pos];
@@ -962,13 +962,20 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				dump_outbuf();
 		}
 		else {
+		final_bytes:
 			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
-			if (!rem)
-				break;
 		}
+	}
+
+	if (rem) {
+		/* we're reading the 1..3 last bytes */
+		word = in[pos];
+		pos++;
+		rem--;
+		goto final_bytes;
 	}
 
 	/* now copy remaining literals or mark the end */
