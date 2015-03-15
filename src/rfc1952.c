@@ -442,7 +442,7 @@ static const uint32_t len_fh[259] = {
  * indicating that it must be computed.
  */
 static uint32_t crc32Lookup[4][256];
-static const uint32_t *crc_table = crc32Lookup[0];
+static uint32_t crc32_8bit[256];
 static uint32_t fh_dist_table[32768];
 
 static char outbuf[65536 * 2];
@@ -485,6 +485,7 @@ void make_crc_table(void)
 			}
 		}
 		crc32Lookup[0][n] = c;
+		crc32_8bit[n] = c ^ 0xff000000;
 	}
 
 	// for Slicing-by-4 and Slicing-by-8
@@ -502,22 +503,17 @@ void make_crc_table(void)
 
 static inline uint32_t crc32_char(uint32_t crc, uint8_t x)
 {
-	uint32_t c = ~crc;
-
-	c = crc_table[(c & 0xff) ^ x] ^ (c >> 8);
-	return ~c;
+	return crc32_8bit[(crc ^ x) & 0xff] ^ (crc >> 8);
 }
 
-// from RFC1952 : about 480 MB/s
+// Modified version originally from RFC1952, working with non-inverting CRCs
 uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 {
-	uint32_t c = ~crc;
 	int n;
 
 	for (n = 0; n < len; n++)
-		c = crc_table[(c & 0xff) ^ buf[n]] ^ (c >> 8);
-
-	return ~c;
+		crc = crc32_char(crc, buf[n]);
+	return crc;
 }
 
 // slice-by-4 : about 980 MB/s, little-endian only.
