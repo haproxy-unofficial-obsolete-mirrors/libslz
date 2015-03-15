@@ -248,6 +248,9 @@ Distance encoding :
 */
 
 
+#if defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__) || defined(__x86_64__) || (defined(__ARMEL__) && defined(__ARM_ARCH_7A__))
+#define UNALIGNED_LE_OK
+#endif
 
 const unsigned char gzip_hdr[] = { 0x1F, 0x8B,   // ID1, ID2
 				   0x08, 0x00,   // Deflate, flags (none)
@@ -625,10 +628,12 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 	}
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
 
-	//outbuf[outlen]     = strm->queue;
-	//outbuf[outlen + 1] = strm->queue >> 8;
-	// fast unaligned access for little endian below
+#ifndef UNALIGNED_LE_OK
+	outbuf[outlen]     = strm->queue;
+	outbuf[outlen + 1] = strm->queue >> 8;
+#else
 	*(uint16_t *)(outbuf + outlen) = strm->queue;
+#endif
 	outlen += 2;
 	strm->queue >>= 16;
 	strm->qbits -= 16;
@@ -825,11 +830,15 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	uint32_t bits, code;
 	uint32_t saved = 0;
 
-	//printf("len = %d\n", ilen);
+#ifndef UNALIGNED_LE_OK
+	word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
+#endif
 	while (rem >= 4) {
-		//word = (word << 8) + (unsigned char)in[pos];
-		//word = ((unsigned char)in[pos] << 24) + (word >> 8);
+#ifndef UNALIGNED_LE_OK
+		word = ((unsigned char)in[pos + 3] << 24) + (word >> 8);
+#else
 		word = *(uint32_t *)&in[pos];
+#endif
 		//word &= 0x00FFFFFF;
 		//printf("%d %08x\n", pos, word);
 		h = hash(word);
@@ -941,11 +950,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			code = len_fh[mlen];
 			enqueue(strm, code & 0xFFFF, code >> 16);
 
-			/* then copy the distance : pos - last */
-			word = pos - last - 1;
-
 			/* direct mapping of dist->huffman code */
-			code = fh_dist_table[word];
+			code = fh_dist_table[pos - last - 1];
 			bits = code & 0x1f;
 			code >>= 5;
 
@@ -955,10 +961,12 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
 			//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 			pos += mlen;
-
 			//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
 			if (outlen > 32768)
 				dump_outbuf();
+#ifndef UNALIGNED_LE_OK
+			word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
+#endif
 		}
 		else {
 			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
