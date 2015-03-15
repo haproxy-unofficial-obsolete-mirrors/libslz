@@ -24,13 +24,13 @@ OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
 
 all: $(BINS)
 
-exp-lm: src/exp-lm.c
+exp-lm: src/exp-lm.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
-rfc1952: src/rfc1952.c
+rfc1952: src/rfc1952.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
-zdec: src/zdec.c
+zdec: src/zdec.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
