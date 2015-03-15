@@ -886,7 +886,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 
 		if (pos - last <= 32768 &&
 		    last < pos - 1 &&
-		    rem >= 2 &&
 		    (uint32_t)ent == word &&
 		    (mlen = memmatch(in + pos, in + last + 1, rem)) >= 2) {
 			/* found a matching entry */
@@ -962,7 +961,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				dump_outbuf();
 		}
 		else {
-		final_bytes:
 			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
@@ -970,12 +968,13 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		}
 	}
 
-	if (rem) {
+	if (__builtin_expect(rem, 0)) {
 		/* we're reading the 1..3 last bytes */
-		word = in[pos];
-		pos++;
-		rem--;
-		goto final_bytes;
+		plit += rem;
+		lit  += rem;
+		do {
+			bit9 += ((unsigned char)in[pos++] >= 144);
+		} while (--rem);
 	}
 
 	/* now copy remaining literals or mark the end */
