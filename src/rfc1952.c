@@ -450,6 +450,8 @@ static int  outsize = 65536;
 static int  outlen;
 static int  totout;
 
+#define BLK 65536
+
 enum slz_state {
 	SLZ_ST_INIT,  /* stream initialized */
 	SLZ_ST_EOB,   /* header or end of block already sent */
@@ -1142,7 +1144,15 @@ int main(int argc, char **argv)
 		len = slz_init(&strm, outbuf, bufsize);
 		write(1, outbuf, len);
 		memset(refs, 0, sizeof(refs));
-		encode(&strm, buffer, buflen);
+
+		len = 0;
+		do {
+			encode(&strm, buffer + len, (buflen - len) > BLK ? BLK : buflen - len);
+			if (buflen - len > BLK)
+				len += BLK;
+			else
+				len = buflen;
+		} while (len < buflen);
 		slz_finish(&strm, outbuf, bufsize);
 	}
 	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% lit=%d ref=%d\n", totin, totout, totout * 100.0 / totin, lit, ref);
