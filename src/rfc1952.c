@@ -819,10 +819,11 @@ static inline long memmatch(const char *a, const char *b, long max)
 void encode(struct slz_stream *strm, const char *in, long ilen)
 {
 	long rem = ilen;
-	long pos = 0;
+	unsigned long pos = 0;
+	unsigned long last;
 	uint32_t word = 0;
 	long mlen;
-	uint32_t h, last;
+	uint32_t h;
 	uint64_t ent;
 
 	uint32_t crc = strm->crc32;
@@ -847,8 +848,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		__builtin_prefetch(refs + h);
 		rem--;
 		ent = refs[h];
-		last = ent;
 		refs[h] = ((uint64_t)pos) + ((uint64_t)word << 32);
+		last = (uint32_t)ent;
 		ent >>= 32;
 
 #if FIND_OPTIMAL_MATCH
