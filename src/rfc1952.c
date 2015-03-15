@@ -441,7 +441,7 @@ static const uint32_t len_fh[259] = {
 /* Table of CRCs of all 8-bit messages. Filled with zeroes at the beginning,
  * indicating that it must be computed.
  */
-static uint32_t crc32Lookup[4][256];
+static uint32_t crc32_32bit[4][256];
 static uint32_t crc32_8bit[256];
 static uint32_t fh_dist_table[32768];
 
@@ -476,7 +476,7 @@ void make_crc_table(void)
 	int n, k;
 
 	for (n = 0; n < 256; n++) {
-		c = (uint32_t) n;
+		c = (uint32_t) n ^ 255;
 		for (k = 0; k < 8; k++) {
 			if (c & 1) {
 				c = 0xedb88320 ^ (c >> 1);
@@ -484,20 +484,20 @@ void make_crc_table(void)
 				c = c >> 1;
 			}
 		}
-		crc32Lookup[0][n] = c;
+		crc32_32bit[0][n] = c ^ 0xff000000;
 		crc32_8bit[n] = c ^ 0xff000000;
 	}
 
-	// for Slicing-by-4 and Slicing-by-8
+	/* Note: here we *do not* have to invert the bits corresponding to the
+	 * byte position, because [0] already has the 8 highest bits inverted,
+	 * and these bits are shifted by 8 at the end of the operation, which
+	 * results in having the next 8 bits shifted in turn. That's why we
+	 * have the xor in the index used just after a computation.
+	 */
 	for (n = 0; n < 256; n++) {
-		crc32Lookup[1][n] = (crc32Lookup[0][n] >> 8) ^ crc32Lookup[0][crc32Lookup[0][n] & 0xFF];
-		crc32Lookup[2][n] = (crc32Lookup[1][n] >> 8) ^ crc32Lookup[0][crc32Lookup[1][n] & 0xFF];
-		crc32Lookup[3][n] = (crc32Lookup[2][n] >> 8) ^ crc32Lookup[0][crc32Lookup[2][n] & 0xFF];
-		// only Slicing-by-8
-		//crc32Lookup[4][n] = (crc32Lookup[3][n] >> 8) ^ crc32Lookup[0][crc32Lookup[3][n] & 0xFF];
-		//crc32Lookup[5][n] = (crc32Lookup[4][n] >> 8) ^ crc32Lookup[0][crc32Lookup[4][n] & 0xFF];
-		//crc32Lookup[6][n] = (crc32Lookup[5][n] >> 8) ^ crc32Lookup[0][crc32Lookup[5][n] & 0xFF];
-		//crc32Lookup[7][n] = (crc32Lookup[6][n] >> 8) ^ crc32Lookup[0][crc32Lookup[6][n] & 0xFF];
+		crc32_32bit[1][n] = 0xff000000 ^ crc32_32bit[0][(0xff000000 ^ crc32_32bit[0][n] ^ 0xff) & 0xff] ^ (crc32_32bit[0][n] >> 8);
+		crc32_32bit[2][n] = 0xff000000 ^ crc32_32bit[0][(0x00ff0000 ^ crc32_32bit[1][n] ^ 0xff) & 0xff] ^ (crc32_32bit[1][n] >> 8);
+		crc32_32bit[3][n] = 0xff000000 ^ crc32_32bit[0][(0x0000ff00 ^ crc32_32bit[2][n] ^ 0xff) & 0xff] ^ (crc32_32bit[2][n] >> 8);
 	}
 }
 
@@ -516,33 +516,34 @@ uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 	return crc;
 }
 
-// slice-by-4 : about 980 MB/s, little-endian only.
-// see intel's zlib patches : https://github.com/jtkukunas/zlib/commits/master
-// see also Linux's CRC32 based on PCLMULQDQ, claiming about 2100 MB/s
-uint32_t crc32_4bytes(uint32_t previousCrc32, const void* data, size_t length)
+uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 {
-	uint32_t* current = (uint32_t*) data;
-	uint32_t crc = ~previousCrc32;
-	// process four bytes at once
-	while (length >= 4) {
-		crc ^= *current++;
-		crc = crc32Lookup[3][ crc & 0xFF] ^
-		      crc32Lookup[2][(crc>>8 ) & 0xFF] ^
-		      crc32Lookup[1][(crc>>16) & 0xFF] ^
-		      crc32Lookup[0][ crc>>24 ];
-		length -= 4;
+	while (len >= 4) {
+#ifdef UNALIGNED_LE_OK
+		crc ^= *(uint32_t *)buf;
+		crc = crc32_32bit[3][(crc >>  0) & 0xff] ^
+		      crc32_32bit[2][(crc >>  8) & 0xff] ^
+		      crc32_32bit[1][(crc >> 16) & 0xff] ^
+		      crc32_32bit[0][(crc >> 24) & 0xff];
+#else
+		crc = crc32_32bit[3][(buf[0] ^ (crc >>  0)) & 0xff] ^
+		      crc32_32bit[2][(buf[1] ^ (crc >>  8)) & 0xff] ^
+		      crc32_32bit[1][(buf[2] ^ (crc >> 16)) & 0xff] ^
+		      crc32_32bit[0][(buf[3] ^ (crc >> 24)) & 0xff];
+#endif
+		buf += 4;
+		len -= 4;
 	}
-	const unsigned char* currentChar = (unsigned char*) current;
-	// remaining 1 to 3 bytes
-	while (length--)
-		crc = (crc >> 8) ^ crc32Lookup[0][(crc & 0xFF) ^ *currentChar++];
-	return ~crc;
+
+	while (len--)
+		crc = crc32_32bit[0][(crc ^ *buf++) & 0xff] ^ (crc >> 8);
+	return crc;
 }
 
 uint32_t update_crc(uint32_t crc, const void *buf, int len)
 {
-	return rfc1952_crc(crc, buf, len);
-	//return crc32_4bytes(crc, buf, len);
+	//return rfc1952_crc(crc, buf, len);
+	return crc32_4bytes(crc, buf, len);
 }
 
 /* Return the CRC of the bytes buf[0..len-1]. */
