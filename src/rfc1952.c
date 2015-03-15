@@ -436,13 +436,14 @@ static const uint32_t len_fh[259] = {
 	0x0d1d23,  0x0d1e23,  0x0800a3               /* 256-258 */
 };
 
-/* CRC32 code adapted from RFC1952 */
-
-/* Table of CRCs of all 8-bit messages. Filled with zeroes at the beginning,
- * indicating that it must be computed.
+/* Table of *inverted* CRC32 for each 8-bit quantity based on the position of
+ * the byte being read relative to the last byte. Eg: [0] means we're on the
+ * last byte, [1] on the previous one etc. These values have 8 inverted bits
+ * at each position so that when processing 32-bit little endian quantities,
+ * the CRC already appears inverted in each individual byte and doesn't need
+ * to be inverted again in the loop.
  */
-static uint32_t crc32_32bit[4][256];
-static uint32_t crc32_8bit[256];
+static uint32_t crc32_fast[4][256];
 static uint32_t fh_dist_table[32768];
 
 static char outbuf[65536 * 2];
@@ -484,8 +485,7 @@ void make_crc_table(void)
 				c = c >> 1;
 			}
 		}
-		crc32_32bit[0][n] = c ^ 0xff000000;
-		crc32_8bit[n] = c ^ 0xff000000;
+		crc32_fast[0][n] = c ^ 0xff000000;
 	}
 
 	/* Note: here we *do not* have to invert the bits corresponding to the
@@ -495,15 +495,15 @@ void make_crc_table(void)
 	 * have the xor in the index used just after a computation.
 	 */
 	for (n = 0; n < 256; n++) {
-		crc32_32bit[1][n] = 0xff000000 ^ crc32_32bit[0][(0xff000000 ^ crc32_32bit[0][n] ^ 0xff) & 0xff] ^ (crc32_32bit[0][n] >> 8);
-		crc32_32bit[2][n] = 0xff000000 ^ crc32_32bit[0][(0x00ff0000 ^ crc32_32bit[1][n] ^ 0xff) & 0xff] ^ (crc32_32bit[1][n] >> 8);
-		crc32_32bit[3][n] = 0xff000000 ^ crc32_32bit[0][(0x0000ff00 ^ crc32_32bit[2][n] ^ 0xff) & 0xff] ^ (crc32_32bit[2][n] >> 8);
+		crc32_fast[1][n] = 0xff000000 ^ crc32_fast[0][(0xff000000 ^ crc32_fast[0][n] ^ 0xff) & 0xff] ^ (crc32_fast[0][n] >> 8);
+		crc32_fast[2][n] = 0xff000000 ^ crc32_fast[0][(0x00ff0000 ^ crc32_fast[1][n] ^ 0xff) & 0xff] ^ (crc32_fast[1][n] >> 8);
+		crc32_fast[3][n] = 0xff000000 ^ crc32_fast[0][(0x0000ff00 ^ crc32_fast[2][n] ^ 0xff) & 0xff] ^ (crc32_fast[2][n] >> 8);
 	}
 }
 
 static inline uint32_t crc32_char(uint32_t crc, uint8_t x)
 {
-	return crc32_8bit[(crc ^ x) & 0xff] ^ (crc >> 8);
+	return crc32_fast[0][(crc ^ x) & 0xff] ^ (crc >> 8);
 }
 
 // Modified version originally from RFC1952, working with non-inverting CRCs
@@ -521,22 +521,22 @@ uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 	while (len >= 4) {
 #ifdef UNALIGNED_LE_OK
 		crc ^= *(uint32_t *)buf;
-		crc = crc32_32bit[3][(crc >>  0) & 0xff] ^
-		      crc32_32bit[2][(crc >>  8) & 0xff] ^
-		      crc32_32bit[1][(crc >> 16) & 0xff] ^
-		      crc32_32bit[0][(crc >> 24) & 0xff];
+		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
+		      crc32_fast[2][(crc >>  8) & 0xff] ^
+		      crc32_fast[1][(crc >> 16) & 0xff] ^
+		      crc32_fast[0][(crc >> 24) & 0xff];
 #else
-		crc = crc32_32bit[3][(buf[0] ^ (crc >>  0)) & 0xff] ^
-		      crc32_32bit[2][(buf[1] ^ (crc >>  8)) & 0xff] ^
-		      crc32_32bit[1][(buf[2] ^ (crc >> 16)) & 0xff] ^
-		      crc32_32bit[0][(buf[3] ^ (crc >> 24)) & 0xff];
+		crc = crc32_fast[3][(buf[0] ^ (crc >>  0)) & 0xff] ^
+		      crc32_fast[2][(buf[1] ^ (crc >>  8)) & 0xff] ^
+		      crc32_fast[1][(buf[2] ^ (crc >> 16)) & 0xff] ^
+		      crc32_fast[0][(buf[3] ^ (crc >> 24)) & 0xff];
 #endif
 		buf += 4;
 		len -= 4;
 	}
 
 	while (len--)
-		crc = crc32_32bit[0][(crc ^ *buf++) & 0xff] ^ (crc >> 8);
+		crc = crc32_fast[0][(crc ^ *buf++) & 0xff] ^ (crc >> 8);
 	return crc;
 }
 
