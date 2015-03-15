@@ -845,11 +845,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		//printf("%d %08x\n", pos, word);
 		h = hash(word);
 		__builtin_prefetch(refs + h);
-		pos++;
 		rem--;
 		ent = refs[h];
 		last = ent;
-		refs[h] = ((uint64_t)(pos - 1)) + ((uint64_t)word << 32);
+		refs[h] = ((uint64_t)pos) + ((uint64_t)word << 32);
 		ent >>= 32;
 
 #if FIND_OPTIMAL_MATCH
@@ -872,11 +871,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		int max_lookup = 2; // 0 = no limit
 
 		/* last<pos checks for overflow */
-		for (last = pos - 2; last < pos - 1 && pos - last <= 32768; last--) {
+		for (last = pos - 1; last < pos && pos - last < 32768; last--) {
 			if (*(uint32_t *)(in + last) != word)
 				continue;
 
-			len = memmatch(in + pos - 1, in + last, rem + 1);
+			len = memmatch(in + pos, in + last, rem + 1);
 			if (!bestlen)
 				firstlen = len;
 
@@ -895,10 +894,10 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
 #endif
 
-		if (pos - last <= 32768 &&
-		    last < pos - 1 &&
+		if (pos - last < 32768 &&
+		    last < pos &&
 		    (uint32_t)ent == word &&
-		    ((mlen = memmatch(in + pos, in + last + 1, rem)) >= 5 || (mlen >= 2 && bit9 < 52))) {
+		    ((mlen = memmatch(in + pos + 1, in + last + 1, rem)) >= 5 || (mlen >= 2 && bit9 < 52))) {
 			/* found a matching entry */
 
 			/* first, copy pending literals */
@@ -912,11 +911,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				 * to save then.
 				 */
 				if (bit9 >= 52)
-					len = copy_lit(strm, in + pos - 1 - plit, plit, 1);
+					len = copy_lit(strm, in + pos - plit, plit, 1);
 				else
-					len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 1);
+					len = copy_lit_huff(strm, in + pos - plit, plit, 1);
 
-				crc = update_crc(crc, in + pos - 1 - plit, len);
+				crc = update_crc(crc, in + pos - plit, len);
 				plit -= len;
 				//if (outlen > 32768)
 					dump_outbuf();
@@ -935,7 +934,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			ref += mlen; // for statistics
 			rem -= mlen;
 			mlen++;
-			pos--;
 
 			crc = update_crc(crc, in + pos, mlen);
 			//pos += mlen;
@@ -975,6 +973,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
+			pos++;
 		}
 	}
 
