@@ -966,12 +966,12 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 				dump_outbuf();
 		}
 		else {
-			if (rem < 0)
-				break;
 			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
+			if (!rem)
+				break;
 		}
 	}
 
@@ -995,11 +995,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	else while (plit) {
 		//flush_bits();
 		if (bit9 >= 52)
-			len = copy_lit(strm, in + pos - 1 - plit, plit, 0);
+			len = copy_lit(strm, in + pos - plit, plit, 0);
 		else
-			len = copy_lit_huff(strm, in + pos - 1 - plit, plit, 0);
+			len = copy_lit_huff(strm, in + pos - plit, plit, 0);
 		//fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
-		crc = update_crc(crc, in + pos - 1 - plit, len);
+		crc = update_crc(crc, in + pos - plit, len);
 		plit -= len;
 		if (strm->state != SLZ_ST_DONE) {
 			strm->state = SLZ_ST_DONE;
