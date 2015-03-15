@@ -1156,6 +1156,6 @@ int main(int argc, char **argv)
 		} while (len < buflen);
 		slz_finish(&strm, outbuf, bufsize);
 	}
-	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% lit=%d ref=%d\n", totin, totout, totout * 100.0 / totin, lit, ref);
+	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% lit=%d ref=%d crc32=%08x\n", totin, totout, totout * 100.0 / totin, lit, ref, strm.crc32);
 	return 0;
 }
