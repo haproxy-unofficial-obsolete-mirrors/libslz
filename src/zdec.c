@@ -165,6 +165,7 @@ int main(void)
 	int bfinal = 0;
 	int btype = 0;
 	int code = 0;
+	int ofs = 0;
 
 	getchar(); // ID1
 	getchar(); // ID2
@@ -188,7 +189,7 @@ int main(void)
 		case 1:
 			printf("  compressed with huffman\n");
 			while (1) {
-				printf("    @0x%04x_%d [0x%06x]: ", get_pos(), get_bit(), queue);
+				printf("    @z: 0x%04x_%d @raw: %d [0x%06x]: ", get_pos(), get_bit(), ofs, queue);
 				code = get_huff_code();
 				printf("code = %3d", code);
 				if (code < 0) {
@@ -204,6 +205,7 @@ int main(void)
 				if (code > 256) {
 					int xbits;
 					int data;
+					int len;
 
 					xbits = ((code - 257) / 4) - 1;
 					if (xbits < 0)
@@ -211,7 +213,9 @@ int main(void)
 					else if (xbits > 5)
 						xbits = 0;
 					data = get_bits(xbits);
-					printf (" => ref: xbits=%d [%d] len=%d", xbits, data, get_len(code, data));
+					len = get_len(code, data);
+					printf (" => ref: xbits=%d [%d] len=%d", xbits, data, len);
+					ofs += len;
 
 					code = get_bits(5);  // 5 bits
 					code = swap_bits(code, 5); // distance is encoded with bits swapped
@@ -223,6 +227,7 @@ int main(void)
 					printf (" code=%d xbits=%d [%d] dist=%d\n", code, xbits, data, get_dist(code, data));
 				}
 				else {
+					ofs++;
 					printf(" (0x%03x)\n", code);
 				}
 			}
