@@ -903,9 +903,9 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
 #endif
 
-		if (pos - last < 32768 &&
+		if ((uint32_t)ent == word &&
+		    pos - last < 32768 &&
 		    last < pos &&
-		    (uint32_t)ent == word &&
 		    ((mlen = memmatch(in + pos, in + last, rem)) >= 6 || (mlen >= 3 && bit9 < 52))) {
 			/* found a matching entry */
 
