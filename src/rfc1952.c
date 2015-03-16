@@ -917,85 +917,94 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
 #endif
 
-		if ((uint32_t)ent == word &&
-		    pos - last < 32768 &&
-		    last < pos &&
-		    ((mlen = memmatch(in + pos, in + last, rem)) >= 6 || (mlen >= 3 && bit9 < 52))) {
-			/* found a matching entry */
-
-			/* first, copy pending literals */
-			//fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
-			while (plit) {
-				/* Huffman encoding requires 9 bits for octets 144..255, so this
-				 * is a waste of space for binary data. Switching between Huffman
-				 * and no-comp then huffman consumes 52 bits (7 for EOB + 3 for
-				 * block type + 7 for alignment + 32 for LEN+NLEN + 3 for next
-				 * block. Only use plain literals if there are more than 52 bits
-				 * to save then.
-				 */
-				if (bit9 >= 52)
-					len = copy_lit(strm, in + pos - plit, plit, 1);
-				else
-					len = copy_lit_huff(strm, in + pos - plit, plit, 1);
-
-				//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
-				plit -= len;
-				//if (outlen > 32768)
-					dump_outbuf();
-			}
-			bit9 = 0;
-
-			/* cannot encode a length larger than 258 bytes */
-			if (mlen > 258)
-				mlen = 258;
-
-			ref += mlen; // for statistics
-			rem -= mlen;
-
-			//crc = update_crc(crc, in + pos, mlen); // if CRC is done per block
-			crc = update_crc(crc, in + pos + 1, mlen - 1);
-
-			/* use mode 01 - fixed huffman */
-			//fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
-
-			if (strm->state == SLZ_ST_EOB) {
-				strm->state = SLZ_ST_FIXED;
-				enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
-			}
-
-			/* copy the length first */
-			code = len_fh[mlen];
-			enqueue(strm, code & 0xFFFF, code >> 16);
-
-			/* direct mapping of dist->huffman code */
-			code = fh_dist_table[pos - last - 1];
-			bits = code & 0x1f;
-			code >>= 5;
-
-			/* in fixed huffman mode, dist is fixed 5 bits */
-			enqueue(strm, code, bits);
-
-			//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
-			//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
-			pos += mlen;
-			//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
-			if (outlen > 32768)
-				dump_outbuf();
-#ifndef UNALIGNED_FASTER
-#ifdef UNALIGNED_LE_OK
-			word = *(uint32_t *)&in[pos - 1];
-#else
-			word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
-#endif
-#endif
-		}
-		else {
+		if ((uint32_t)ent != word) {
+		send_as_lit:
 			rem--;
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
 			pos++;
+			continue;
 		}
+
+		if (pos - last >= 32768)
+			goto send_as_lit;
+
+		if (last >= pos)
+			goto send_as_lit;
+
+		mlen = memmatch(in + pos, in + last, rem);
+
+		if (mlen < 6 && (mlen < 3 || bit9 >= 52))
+			goto send_as_lit;
+
+		/* found a matching entry */
+
+		/* first, copy pending literals */
+		//fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
+		while (plit) {
+			/* Huffman encoding requires 9 bits for octets 144..255, so this
+			 * is a waste of space for binary data. Switching between Huffman
+			 * and no-comp then huffman consumes 52 bits (7 for EOB + 3 for
+			 * block type + 7 for alignment + 32 for LEN+NLEN + 3 for next
+			 * block. Only use plain literals if there are more than 52 bits
+			 * to save then.
+			 */
+			if (bit9 >= 52)
+				len = copy_lit(strm, in + pos - plit, plit, 1);
+			else
+				len = copy_lit_huff(strm, in + pos - plit, plit, 1);
+
+			//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
+			plit -= len;
+			//if (outlen > 32768)
+			dump_outbuf();
+		}
+		bit9 = 0;
+
+		/* cannot encode a length larger than 258 bytes */
+		if (mlen > 258)
+			mlen = 258;
+
+		ref += mlen; // for statistics
+		rem -= mlen;
+
+		//crc = update_crc(crc, in + pos, mlen); // if CRC is done per block
+		crc = update_crc(crc, in + pos + 1, mlen - 1);
+
+		/* use mode 01 - fixed huffman */
+		//fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
+
+		if (strm->state == SLZ_ST_EOB) {
+			strm->state = SLZ_ST_FIXED;
+			enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
+		}
+
+		/* copy the length first */
+		code = len_fh[mlen];
+		enqueue(strm, code & 0xFFFF, code >> 16);
+
+		/* direct mapping of dist->huffman code */
+		code = fh_dist_table[pos - last - 1];
+		bits = code & 0x1f;
+		code >>= 5;
+
+		/* in fixed huffman mode, dist is fixed 5 bits */
+		enqueue(strm, code, bits);
+
+		//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
+		//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
+		pos += mlen;
+		//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
+		if (outlen > 32768)
+			dump_outbuf();
+#ifndef UNALIGNED_FASTER
+#ifdef UNALIGNED_LE_OK
+		word = *(uint32_t *)&in[pos - 1];
+#else
+		word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
+#endif
+#endif
 	}
 
 	if (__builtin_expect(rem, 0)) {
