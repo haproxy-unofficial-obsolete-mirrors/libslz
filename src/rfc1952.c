@@ -855,7 +855,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
 		__builtin_prefetch(refs + h, 1, 0);
 		crc = crc32_char(crc, word);
-		rem--;
 		ent = refs[h];
 		last = (uint32_t)ent;
 		ent >>= 32;
@@ -885,7 +884,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 			if (*(uint32_t *)(in + last) != word)
 				continue;
 
-			len = memmatch(in + pos, in + last, rem + 1);
+			len = memmatch(in + pos, in + last, rem);
 			if (!bestlen)
 				firstlen = len;
 
@@ -907,7 +906,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		if (pos - last < 32768 &&
 		    last < pos &&
 		    (uint32_t)ent == word &&
-		    ((mlen = memmatch(in + pos, in + last, rem + 1) - 1) >= 5 || (mlen >= 2 && bit9 < 52))) {
+		    ((mlen = memmatch(in + pos, in + last, rem)) >= 6 || (mlen >= 3 && bit9 < 52))) {
 			/* found a matching entry */
 
 			/* first, copy pending literals */
@@ -932,22 +931,15 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 			}
 			bit9 = 0;
 
-			//fprintf(stderr, "found [%ld]:0x%06x == [%d=@-%ld] %ld bytes, rem=%ld\n",
-			//        pos - 1, word,
-			//        last, pos - 1 - last,
-			//        mlen + 1, rem);
-
 			/* cannot encode a length larger than 258 bytes */
-			if (mlen >= 257)
-				mlen = 257;
+			if (mlen > 258)
+				mlen = 258;
 
 			ref += mlen; // for statistics
 			rem -= mlen;
-			mlen++;
 
 			//crc = update_crc(crc, in + pos, mlen); // if CRC is done per block
 			crc = update_crc(crc, in + pos + 1, mlen - 1);
-			//pos += mlen;
 
 			/* use mode 01 - fixed huffman */
 			//fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
@@ -980,7 +972,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 #endif
 		}
 		else {
-			//fprintf(stderr, "litteral [%ld]:%08x\n", pos - 1, word);
+			rem--;
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
 			lit++; // for statistics
