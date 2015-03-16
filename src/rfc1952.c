@@ -905,7 +905,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 		if (pos - last < 32768 &&
 		    last < pos &&
 		    (uint32_t)ent == word &&
-		    ((mlen = memmatch(in + pos + 1, in + last + 1, rem)) >= 5 || (mlen >= 2 && bit9 < 52))) {
+		    ((mlen = memmatch(in + pos, in + last, rem + 1) - 1) >= 5 || (mlen >= 2 && bit9 < 52))) {
 			/* found a matching entry */
 
 			/* first, copy pending literals */
