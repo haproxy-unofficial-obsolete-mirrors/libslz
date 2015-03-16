@@ -251,12 +251,17 @@ Distance encoding :
 */
 
 
-/* we have UNALIGNED_LE_OK and UNALIGNED_FASTER. The later indicates that
- * using unaligned data is faster than a simple shift. On x86 at least it
- * is not the case. x86_64 is 7% faster to read one byte + shifting by 8
- * than to read one word, and i686 is 30% faster.
+/* we have UNALIGNED_LE_OK and UNALIGNED_FASTER. The latter indicates that
+ * using unaligned data is faster than a simple shift. On x86 32-bit at least
+ * it is not the case as the per-byte access is 30% faster. A core2-duo on
+ * x86_64 is 7% faster to read one byte + shifting by 8 than to read one word,
+ * but a core i5 is 7% faster doing the unaligned read, so we privilege more
+ * recent implementations here.
  */
-#if defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__) || defined(__x86_64__) || (defined(__ARMEL__) && defined(__ARM_ARCH_7A__))
+#if defined(__x86_64__)
+#define UNALIGNED_LE_OK
+#define UNALIGNED_FASTER
+#elif defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__) || (defined(__ARMEL__) && defined(__ARM_ARCH_7A__))
 #define UNALIGNED_LE_OK
 //#define UNALIGNED_FASTER
 #endif
