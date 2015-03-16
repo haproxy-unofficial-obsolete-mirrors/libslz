@@ -251,8 +251,14 @@ Distance encoding :
 */
 
 
+/* we have UNALIGNED_LE_OK and UNALIGNED_FASTER. The later indicates that
+ * using unaligned data is faster than a simple shift. On x86 at least it
+ * is not the case. x86_64 is 7% faster to read one byte + shifting by 8
+ * than to read one word, and i686 is 30% faster.
+ */
 #if defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__) || defined(__x86_64__) || (defined(__ARMEL__) && defined(__ARM_ARCH_7A__))
 #define UNALIGNED_LE_OK
+//#define UNALIGNED_FASTER
 #endif
 
 const unsigned char gzip_hdr[] = { 0x1F, 0x8B,   // ID1, ID2
@@ -843,11 +849,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 	uint32_t bits, code;
 	uint32_t saved = 0;
 
-#ifndef UNALIGNED_LE_OK
+#ifndef UNALIGNED_FASTER
 	word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
 #endif
 	while (rem >= 4) {
-#ifndef UNALIGNED_LE_OK
+#ifndef UNALIGNED_FASTER
 		word = ((unsigned char)in[pos + 3] << 24) + (word >> 8);
 #else
 		word = *(uint32_t *)&in[pos];
@@ -970,8 +976,12 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 			//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
 			if (outlen > 32768)
 				dump_outbuf();
-#ifndef UNALIGNED_LE_OK
+#ifndef UNALIGNED_FASTER
+#ifdef UNALIGNED_LE_OK
+			word = *(uint32_t *)&in[pos - 1];
+#else
 			word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
+#endif
 #endif
 		}
 		else {
