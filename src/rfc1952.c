@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/user.h>
 
 /* From RFC1952 about the GZIP file format :
 
@@ -1116,6 +1118,7 @@ int main(int argc, char **argv)
 	make_crc_table();
 	prepare_dist_table();
 
+	buflen = bufsize;
 	if (bufsize <= 0) {
 		if (fstat(0, &instat) == -1) {
 			perror("fstat(stdin)");
@@ -1127,12 +1130,9 @@ int main(int argc, char **argv)
 			printf("Cannot determine input size\n");
 			exit(1);
 		}
-	}
 
-	buffer = calloc(1, bufsize);
-	if (!buffer) {
-		perror("calloc");
-		exit(1);
+		buflen = bufsize;
+		bufsize = (bufsize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 	}
 
 	outbuf = calloc(1, bufsize);
@@ -1141,10 +1141,19 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	buflen = read(0, buffer, bufsize);
-	if (buflen < 0) {
-		perror("read");
-		exit(2);
+	buffer = mmap(NULL, bufsize, PROT_READ, MAP_PRIVATE, 0, 0);
+	if (buffer == MAP_FAILED) {
+		buffer = calloc(1, bufsize);
+		if (!buffer) {
+			perror("calloc");
+			exit(1);
+		}
+
+		buflen = read(0, buffer, bufsize);
+		if (buflen < 0) {
+			perror("read");
+			exit(2);
+		}
 	}
 
 	totin = buflen * loops;
