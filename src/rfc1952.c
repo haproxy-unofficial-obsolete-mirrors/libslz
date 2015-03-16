@@ -851,7 +851,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 	uint32_t len;
 	uint32_t plit = 0;
 	uint32_t bit9 = 0;
-	uint32_t bits, code;
+	uint32_t dist, code;
 	uint32_t saved = 0;
 
 #ifndef UNALIGNED_FASTER
@@ -935,10 +935,31 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 
 		mlen = memmatch(in + pos, in + last, rem);
 
-		if (mlen < 6 && (mlen < 3 || bit9 >= 52))
+		if (mlen < 3)
 			goto send_as_lit;
 
 		/* found a matching entry */
+
+		if (bit9 >= 52 && mlen < 6)
+			goto send_as_lit;
+
+		/* cannot encode a length larger than 258 bytes */
+		if (mlen > 258)
+			mlen = 258;
+
+		/* compute the output code, its size and the length's size in
+		 * bits to know if the reference is cheaper than literals.
+		 */
+		code = len_fh[mlen];
+
+		/* direct mapping of dist->huffman code */
+		dist = fh_dist_table[pos - last - 1];
+
+		/* if encoding the dist+length is more expensive than sending
+		 * the equivalent as bytes, lets keep the literals.
+		 */
+		if ((dist & 0x1f) + (code >> 16) + 8 >= 8 * mlen + bit9)
+			goto send_as_lit;
 
 		/* first, copy pending literals */
 		//fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
@@ -962,10 +983,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		}
 		bit9 = 0;
 
-		/* cannot encode a length larger than 258 bytes */
-		if (mlen > 258)
-			mlen = 258;
-
 		ref += mlen; // for statistics
 		rem -= mlen;
 
@@ -981,19 +998,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		}
 
 		/* copy the length first */
-		code = len_fh[mlen];
 		enqueue(strm, code & 0xFFFF, code >> 16);
 
-		/* direct mapping of dist->huffman code */
-		code = fh_dist_table[pos - last - 1];
-		bits = code & 0x1f;
-		code >>= 5;
-
 		/* in fixed huffman mode, dist is fixed 5 bits */
-		enqueue(strm, code, bits);
+		enqueue(strm, dist >> 5, dist & 0x1f);
 
-		//fprintf(stderr, "dist=%ld code=%d bits=%d mask=%04x value=%ld\n",
-		//	pos-last, code, bits, (1 << bits) - 1, ((pos - last) - 1) & ((1 << bits) - 1));
 		pos += mlen;
 		//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
 		if (outlen > 32768)
