@@ -821,7 +821,7 @@ static inline long memmatch(const char *a, const char *b, long max)
 }
 
 /* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
-void encode(struct slz_stream *strm, const char *in, long ilen)
+void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 {
 	long rem = ilen;
 	unsigned long pos = 0;
@@ -997,36 +997,15 @@ void encode(struct slz_stream *strm, const char *in, long ilen)
 	}
 
 	/* now copy remaining literals or mark the end */
-	if (!plit) {
-		//fprintf(stderr, "plit=0, st=%d\n", strm->state);
-		if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
-			strm->state = (strm->state == SLZ_ST_LAST) ? SLZ_ST_DONE : SLZ_ST_EOB;
-			send_eob(strm);
-		}
-		//flush_bits();
-		//len = copy_lit(NULL, 0, 0);
-		/* BTYPE=1, BFINAL=1 */
-		//fprintf(stderr, "done now => st=%d\n", strm->state);
-		if (strm->state != SLZ_ST_DONE) {
-			enqueue(strm, 3, 3);
-			send_eob(strm);
-			strm->state = SLZ_ST_DONE;
-		}
-	}
-	else while (plit) {
-		//flush_bits();
+	while (plit) {
 		if (bit9 >= 52)
-			len = copy_lit(strm, in + pos - plit, plit, 0);
+			len = copy_lit(strm, in + pos - plit, plit, more);
 		else
-			len = copy_lit_huff(strm, in + pos - plit, plit, 0);
-		//fprintf(stderr, "done now => st=%d, len=%d\n", strm->state, len);
-		//crc = update_crc(crc, in + pos - plit, len);
+			len = copy_lit_huff(strm, in + pos - plit, plit, more);
+
+		//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 		plit -= len;
-		if (strm->state != SLZ_ST_DONE) {
-			strm->state = SLZ_ST_DONE;
-			send_eob(strm);
-		}
-		if (outlen > 32768)
+		//if (outlen > 32768)
 			dump_outbuf();
 	}
 
@@ -1079,6 +1058,18 @@ int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
 
 	if (room < 8)
 		return 0;
+
+	if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
+		strm->state = (strm->state == SLZ_ST_LAST) ? SLZ_ST_DONE : SLZ_ST_EOB;
+		send_eob(strm);
+	}
+
+	if (strm->state != SLZ_ST_DONE) {
+		/* send BTYPE=1, BFINAL=1 */
+		enqueue(strm, 3, 3);
+		send_eob(strm);
+		strm->state = SLZ_ST_DONE;
+	}
 
 	last = outlen;
 	flush_bits(strm);
@@ -1156,7 +1147,7 @@ int main(int argc, char **argv)
 
 		len = 0;
 		do {
-			encode(&strm, buffer + len, (buflen - len) > BLK ? BLK : buflen - len);
+			encode(&strm, buffer + len, (buflen - len) > BLK ? BLK : buflen - len, (buflen - len) > BLK);
 			if (buflen - len > BLK)
 				len += BLK;
 			else
