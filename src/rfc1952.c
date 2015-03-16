@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 /* From RFC1952 about the GZIP file format :
 
@@ -1104,6 +1105,7 @@ int main(int argc, char **argv)
 	char *buffer;
 	int bufsize = 32768;
 	int buflen;
+	struct stat instat;
 
 	if (argc > 1)
 		bufsize = atoi(argv[1]);
@@ -1113,6 +1115,19 @@ int main(int argc, char **argv)
 
 	make_crc_table();
 	prepare_dist_table();
+
+	if (bufsize <= 0) {
+		if (fstat(0, &instat) == -1) {
+			perror("fstat(stdin)");
+			exit(1);
+		}
+		/* size of zero means stat the file */
+		bufsize = instat.st_size;
+		if (bufsize <= 0) {
+			printf("Cannot determine input size\n");
+			exit(1);
+		}
+	}
 
 	buffer = calloc(1, bufsize);
 	if (!buffer) {
