@@ -1135,7 +1135,7 @@ int main(int argc, char **argv)
 		bufsize = (bufsize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 	}
 
-	outbuf = calloc(1, bufsize);
+	outbuf = calloc(1, 32768+4096);
 	if (!outbuf) {
 		perror("calloc");
 		exit(1);
