@@ -785,7 +785,7 @@ static void dump_outbuf()
 	outlen = 0;
 }
 
-#define HASH_BITS 15
+#define HASH_BITS 13
 
 /* stats */
 unsigned int lit = 0, ref = 0;
