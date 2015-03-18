@@ -520,6 +520,15 @@ static inline uint32_t crc32_char(uint32_t crc, uint8_t x)
 	return crc32_fast[0][(crc ^ x) & 0xff] ^ (crc >> 8);
 }
 
+static inline uint32_t crc32_uint32(uint32_t data)
+{
+	data = crc32_fast[3][(data >>  0) & 0xff] ^
+	       crc32_fast[2][(data >>  8) & 0xff] ^
+	       crc32_fast[1][(data >> 16) & 0xff] ^
+	       crc32_fast[0][(data >> 24) & 0xff];
+	return data;
+}
+
 // Modified version originally from RFC1952, working with non-inverting CRCs
 uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 {
