@@ -644,29 +644,34 @@ static uint32_t dist_to_code(uint32_t l)
  */
 static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 {
-	strm->queue += x << strm->qbits;
-	strm->qbits += xbits;
-	if (__builtin_expect(strm->qbits, 0) < 16) {
-		if (strm->qbits >= 8) {
+	uint32_t queue = strm->queue + (x << strm->qbits);
+	uint32_t qbits = strm->qbits + xbits;
+
+	if (__builtin_expect(qbits < 16, 1)) {
+		if (qbits >= 8) {
 			/* usual case */
-			strm->qbits -= 8;
-			outbuf[outlen] = strm->queue;
-			strm->queue >>= 8;
+			qbits -= 8;
+			outbuf[outlen] = queue;
+			queue >>= 8;
 			outlen += 1;
 		}
+		strm->qbits = qbits;
+		strm->queue = queue;
 		return;
 	}
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
 
 #ifndef UNALIGNED_LE_OK
-	outbuf[outlen]     = strm->queue;
-	outbuf[outlen + 1] = strm->queue >> 8;
+	outbuf[outlen]     = queue;
+	outbuf[outlen + 1] = queue >> 8;
 #else
-	*(uint16_t *)(outbuf + outlen) = strm->queue;
+	*(uint16_t *)(outbuf + outlen) = queue;
 #endif
 	outlen += 2;
-	strm->queue >>= 16;
-	strm->qbits -= 16;
+	queue >>= 16;
+	qbits -= 16;
+	strm->qbits = qbits;
+	strm->queue = queue;
 	//fprintf(stderr, "qbits=%d outlen=%d\n", qbits, outlen);
 }
 
