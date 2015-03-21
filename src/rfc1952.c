@@ -719,13 +719,11 @@ static inline void send_eob(struct slz_stream *strm)
 }
 
 /* copies at most <len> litterals from <buf>, returns the amount of data
- * copied. <more> indicates that there are data past buf + <len>.
+ * copied. <more> indicates that there are data past buf + <len>. It must not
+ * be called with len <= 0.
  */
 static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, int more)
 {
-	if (len <= 0)
-		return 0;
-
 	if (len > 65535) {
 		len = 65535;
 		more = 1;
@@ -747,14 +745,12 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 }
 
 /* copies at most <len> litterals from <buf>, returns the amount of data
- * copied. <more> indicates that there are data past buf + <len>.
+ * copied. <more> indicates that there are data past buf + <len>. It must not
+ * be called with len <= 0.
  */
 static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *buf, int len, int more)
 {
 	uint32_t pos;
-
-	if (len <= 0)
-		return 0;
 
 	/* This ugly construct limits the mount of tests and optimizes for the
 	 * most common case (more > 0).
