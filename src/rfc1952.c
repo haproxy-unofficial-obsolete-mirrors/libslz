@@ -1087,7 +1087,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		//printf("%d %08x\n", pos, word);
 		h = hash(word);
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
-		__builtin_prefetch(refs + h, 1, 0);
+		//__builtin_prefetch(refs + h, 1, 0);
 		crc = crc32_char(crc, word);
 		ent = refs[h];
 		last = (uint32_t)ent;
