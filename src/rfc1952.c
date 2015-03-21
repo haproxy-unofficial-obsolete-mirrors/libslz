@@ -808,7 +808,6 @@ unsigned int lit = 0, ref = 0;
  * bit0..31  = word
  * bit32..63 = last position in buffer of similar content
  */
-uint64_t refs[1 << HASH_BITS];
 
 /* This hash provides good average results on HTML contents, and is among the
  * few which provide almost optimal results on various different pages.
@@ -1073,6 +1072,12 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 	uint32_t bit9 = 0;
 	uint32_t dist, code;
 	uint32_t saved = 0;
+	uint64_t refs[1 << HASH_BITS];
+
+	/* Filling refs with known values ensures that cache lines are populated
+	 * and that refs lookup will not cause cache misses.
+	 */
+	memset(refs, 0, sizeof(refs));
 
 #ifndef UNALIGNED_FASTER
 	word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
@@ -1414,7 +1419,7 @@ int main(int argc, char **argv)
 		//write(1, gzip_hdr, sizeof(gzip_hdr));
 		len = slz_init(&strm, outbuf, bufsize);
 		write(1, outbuf, len);
-		memset(refs, 0, sizeof(refs));
+		//memset(refs, 0, sizeof(refs));
 
 		len = 0;
 		do {
