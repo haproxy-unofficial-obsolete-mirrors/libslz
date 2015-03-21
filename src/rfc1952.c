@@ -470,12 +470,12 @@ enum slz_state {
 };
 
 struct slz_stream {
-	enum slz_state state;
-	unsigned char *outbuf; /* set by encode() */
-	uint32_t crc32;
-	uint32_t ilen;
 	uint32_t queue; /* last pending bits, LSB first */
 	uint32_t qbits; /* number of bits in queue, < 8 */
+	unsigned char *outbuf; /* set by encode() */
+	enum slz_state state;
+	uint32_t crc32;
+	uint32_t ilen;
 };
 
 /* Make the table for a fast CRC. */
