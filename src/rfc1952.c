@@ -756,12 +756,17 @@ static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *
 	if (len <= 0)
 		return 0;
 
-	if (strm->state == SLZ_ST_EOB || !more) {
-		if (strm->state != SLZ_ST_EOB)
-			send_eob(strm);
+	/* This ugly construct limits the mount of tests and optimizes for the
+	 * most common case (more > 0).
+	 */
+	if (strm->state == SLZ_ST_EOB) {
+	eob:
 		strm->state = more ? SLZ_ST_FIXED : SLZ_ST_LAST;
-		//fprintf(stderr, "len=%d more=%d\n", len, more);
 		enqueue(strm, 2 + !more, 3); // BFINAL = !more ; BTYPE = 01
+	}
+	else if (!more) {
+		send_eob(strm);
+		goto eob;
 	}
 
 	pos = 0;
