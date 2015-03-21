@@ -1133,8 +1133,8 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		if (last >= pos)
 			goto send_as_lit;
 
-		mlen = memmatch(in + pos, in + last, rem);
-
+		/* Note: cannot encode a length larger than 258 bytes */
+		mlen = memmatch(in + pos, in + last, rem > 258 ? 258 : rem);
 		if (mlen < 3)
 			goto send_as_lit;
 
@@ -1142,10 +1142,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 
 		if (bit9 >= 52 && mlen < 6)
 			goto send_as_lit;
-
-		/* cannot encode a length larger than 258 bytes */
-		if (mlen > 258)
-			mlen = 258;
 
 		/* compute the output code, its size and the length's size in
 		 * bits to know if the reference is cheaper than literals.
