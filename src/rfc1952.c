@@ -1237,44 +1237,42 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 }
 
 
-/* Tries to to send the gzip header for stream <strm> if there is enough room
- * in buffer <buf>. When it's done, the stream state is updated to SLZ_ST_EOB.
- * It returns the number of bytes emitted, either 0 or the full header.
+/* Sends the gzip header for stream <strm> into buffer <buf>. When it's done,
+ * the stream state is updated to SLZ_ST_EOB. It returns the number of bytes
+ * emitted which is always 10. The caller is responsible for ensuring there's
+ * always enough room in the buffer.
  */
-int slz_send_gzip_header(struct slz_stream *strm, unsigned char *buf, int room)
+int slz_send_gzip_header(struct slz_stream *strm, unsigned char *buf)
 {
-	if (room < sizeof(gzip_hdr))
-		return 0;
-
 	memcpy(buf, gzip_hdr, sizeof(gzip_hdr));
 	strm->state = SLZ_ST_EOB;
 	return sizeof(gzip_hdr);
 }
 
-/* Initializes stream <strm> and tries to send the header into <buf> if there
- * is enough room. Returns the number of bytes emitted, either 0 or the header
- * size.
+/* Initializes stream <strm> and sends the header into <buf>. Returns the
+ * number of bytes emitted, which is always the header size (10 bytes). The
+ * caller is responsible for ensuring there's always enough room in the buffer.
  */
-int slz_init(struct slz_stream *strm, unsigned char *buf, int room)
+int slz_init(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->state = SLZ_ST_INIT;
 	strm->crc32 = 0;
 	strm->ilen  = 0;
 	strm->qbits = 0;
 	strm->queue = 0;
-	return slz_send_gzip_header(strm, buf, room);
+	return slz_send_gzip_header(strm, buf);
 }
 
-/* Tries to flush pending bits and to send the gzip trailer for stream <strm>
- * if there is enough room in buffer <buf>. When it's done, the stream state is
- * updated to SLZ_ST_END. It returns the number of bytes emitted, either 0 or
- * the full trailer.
+/* Flushes pending bits and sends the gzip trailer for stream <strm> into
+ * buffer <buf>. When it's done, the stream state is updated to SLZ_ST_END. It
+ * returns the number of bytes emitted. The trailer consists in flushing the
+ * possibly pending bits from the queue (up to 7 bits), then 3 bits, a rounding
+ * to the next byte, then 4 bytes for the CRC and another 4 bytes for the input
+ * length. That may abount to 2+4+4 = 10 bytes, that the caller must ensure are
+ * available before calling the function. The number of bytes sent is returned.
  */
-int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
+int slz_finish(struct slz_stream *strm, unsigned char *buf)
 {
-	if (room < 8)
-		return 0;
-
 	strm->outbuf = buf;
 
 	if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
@@ -1382,7 +1380,7 @@ int main(int argc, char **argv)
 	}
 
 	while (loops--) {
-		len = slz_init(&strm, outbuf, bufsize);
+		len = slz_init(&strm, outbuf);
 
 		ofs = 0;
 		do {
@@ -1396,7 +1394,7 @@ int main(int argc, char **argv)
 			else
 				ofs = buflen;
 		} while (ofs < buflen);
-		len += slz_finish(&strm, outbuf + len, bufsize);
+		len += slz_finish(&strm, outbuf + len);
 		totin += ofs;
 		totout += len;
 		write(1, outbuf, len);
