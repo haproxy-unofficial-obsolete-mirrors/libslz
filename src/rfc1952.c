@@ -460,13 +460,6 @@ static const uint32_t len_fh[259] = {
 static uint32_t crc32_fast[4][256];
 static uint32_t fh_dist_table[32768];
 
-static char outbuf[65536 * 2];
-static int  outsize = 65536;
-static int  outlen;
-static int  totout;
-
-#define BLK 65536
-
 enum slz_state {
 	SLZ_ST_INIT,  /* stream initialized */
 	SLZ_ST_EOB,   /* header or end of block already sent */
@@ -478,6 +471,7 @@ enum slz_state {
 
 struct slz_stream {
 	enum slz_state state;
+	unsigned char *outbuf; /* set by encode() */
 	uint32_t crc32;
 	uint32_t ilen;
 	uint32_t queue; /* last pending bits, LSB first */
@@ -651,9 +645,8 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 		if (qbits >= 8) {
 			/* usual case */
 			qbits -= 8;
-			outbuf[outlen] = queue;
+			*strm->outbuf++ = queue;
 			queue >>= 8;
-			outlen += 1;
 		}
 		strm->qbits = qbits;
 		strm->queue = queue;
@@ -662,53 +655,50 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 	/* case where we queue large codes after small ones, eg: 7 then 9 */
 
 #ifndef UNALIGNED_LE_OK
-	outbuf[outlen]     = queue;
-	outbuf[outlen + 1] = queue >> 8;
+	strm->outbuf[0] = queue;
+	strm->outbuf[1] = queue >> 8;
 #else
-	*(uint16_t *)(outbuf + outlen) = queue;
+	*(uint16_t *)strm->outbuf = queue;
 #endif
-	outlen += 2;
+	strm->outbuf += 2;
 	queue >>= 16;
 	qbits -= 16;
 	strm->qbits = qbits;
 	strm->queue = queue;
-	//fprintf(stderr, "qbits=%d outlen=%d\n", qbits, outlen);
 }
 
 /* align to next byte */
 static inline void flush_bits(struct slz_stream *strm)
 {
 	if (strm->qbits) {
-		outbuf[outlen] = strm->queue;
-		outlen += 1;
+		*strm->outbuf++ = strm->queue;
 		strm->queue = 0;
 		strm->qbits = 0;
 	}
 }
 
 /* only valid if buffer is already aligned */
-static inline void copy_8b(uint32_t x)
+static inline void copy_8b(struct slz_stream *strm, uint32_t x)
 {
-	outbuf[outlen] = x;
-	outlen += 1;
+	*strm->outbuf++ = x;
 }
 
 /* only valid if buffer is already aligned */
-static inline void copy_16b(uint32_t x)
+static inline void copy_16b(struct slz_stream *strm, uint32_t x)
 {
-	outbuf[outlen] = x;
-	outbuf[outlen + 1] = x >> 8;
-	outlen += 2;
+	strm->outbuf[0] = x;
+	strm->outbuf[1] = x >> 8;
+	strm->outbuf += 2;
 }
 
 /* only valid if buffer is already aligned */
-static inline void copy_32b(uint32_t x)
+static inline void copy_32b(struct slz_stream *strm, uint32_t x)
 {
-	outbuf[outlen] = x;
-	outbuf[outlen + 1] = x >> 8;
-	outbuf[outlen + 2] = x >> 16;
-	outbuf[outlen + 3] = x >> 24;
-	outlen += 4;
+	strm->outbuf[0] = x;
+	strm->outbuf[1] = x >> 8;
+	strm->outbuf[2] = x >> 16;
+	strm->outbuf[3] = x >> 24;
+	strm->outbuf += 4;
 }
 
 static inline void send_huff(struct slz_stream *strm, uint32_t code)
@@ -733,11 +723,6 @@ static inline void send_eob(struct slz_stream *strm)
  */
 static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, int more)
 {
-	if (len + 5 > outsize - outlen) {
-		len = outsize - outlen - 5;
-		more = 1;
-	}
-
 	if (len <= 0)
 		return 0;
 
@@ -754,10 +739,10 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 	//fprintf(stderr, "len=%d more=%d\n", len, more);
 	enqueue(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
 	flush_bits(strm);
-	copy_16b(len);  // len
-	copy_16b(~len); // nlen
-	memcpy(outbuf + outlen, buf, len);
-	outlen += len;
+	copy_16b(strm, len);  // len
+	copy_16b(strm, ~len); // nlen
+	memcpy(strm->outbuf, buf, len);
+	strm->outbuf += len;
 	return len;
 }
 
@@ -767,11 +752,6 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *buf, int len, int more)
 {
 	uint32_t pos;
-
-	if (len + 5 > outsize - outlen) {
-		len = outsize - outlen - 5;
-		more = 1;
-	}
 
 	if (len <= 0)
 		return 0;
@@ -789,14 +769,6 @@ static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *
 		send_huff(strm, buf[pos++]);
 	}
 	return len;
-}
-
-/* dumps buffer to stdout */
-static void dump_outbuf()
-{
-	write(1, outbuf, outlen);
-	totout += outlen;
-	outlen = 0;
 }
 
 #define HASH_BITS 13
@@ -828,7 +800,7 @@ static inline uint32_t hash(uint32_t a)
 /* Warning! this implementation *always* reads at least 4 bytes, so it must not
  * be called with max < 4.
  */
-static inline long memmatch(const char *a, const char *b, long max)
+static inline long memmatch(const unsigned char *a, const unsigned char *b, long max)
 {
 #if 0 // 1.047s
 	asm (
@@ -1055,8 +1027,13 @@ static inline long memmatch(const char *a, const char *b, long max)
 #endif
 }
 
-/* does 290 MB/s on non-compressible data, 330 MB/s on HTML. */
-void encode(struct slz_stream *strm, const char *in, long ilen, int more)
+/* Compresses <ilen> bytes from <in> into <out>. The output result may be up to
+ * 5 bytes larger than the input, to which 2 extra bytes may be added to send
+ * the last chunk due to BFINAL+EOB encoding (10 bits) when <more> is not set.
+ * The caller is responsible for ensuring there is enough room in the output
+ * buffer for this. The amount of output bytes is returned.
+ */
+long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
 {
 	long rem = ilen;
 	unsigned long pos = 0;
@@ -1073,6 +1050,8 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 	uint32_t dist, code;
 	uint32_t saved = 0;
 	uint64_t refs[1 << HASH_BITS] = { };
+
+	strm->outbuf = out;
 
 #ifndef UNALIGNED_FASTER
 	word = ((unsigned char)in[pos] << 8) + ((unsigned char)in[pos + 1] << 16) + ((unsigned char)in[pos + 2] << 24);
@@ -1198,8 +1177,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 
 			//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 			plit -= len;
-			//if (outlen > 32768)
-			dump_outbuf();
 		}
 		bit9 = 0;
 
@@ -1210,7 +1187,6 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		crc = update_crc(crc, in + pos + 1, mlen - 1);
 
 		/* use mode 01 - fixed huffman */
-		//fprintf(stderr, "compressed @0x%x #%d\n", totout + outlen, strm->qbits);
 
 		if (strm->state == SLZ_ST_EOB) {
 			strm->state = SLZ_ST_FIXED;
@@ -1224,9 +1200,7 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 		enqueue(strm, dist >> 5, dist & 0x1f);
 
 		pos += mlen;
-		//fprintf(stderr, "end of compressed : @0x%x #%d\n", totout + outlen, strm->qbits);
-		if (outlen > 32768)
-			dump_outbuf();
+
 #ifndef UNALIGNED_FASTER
 #ifdef UNALIGNED_LE_OK
 		word = *(uint32_t *)&in[pos - 1];
@@ -1255,17 +1229,11 @@ void encode(struct slz_stream *strm, const char *in, long ilen, int more)
 
 		//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 		plit -= len;
-		//if (outlen > 32768)
-			dump_outbuf();
 	}
 
 	strm->crc32 = crc;
 	strm->ilen += ilen;
-	//flush_bits(strm);
-	//copy_32b(crc);
-	//copy_32b(buflen);
-	//dump_outbuf();
-	//fprintf(stderr, "Saved between first and optimal: %d\n", saved);
+	return strm->outbuf - out;
 }
 
 
@@ -1304,10 +1272,10 @@ int slz_init(struct slz_stream *strm, unsigned char *buf, int room)
  */
 int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
 {
-	long last;
-
 	if (room < 8)
 		return 0;
+
+	strm->outbuf = buf;
 
 	if (strm->state == SLZ_ST_FIXED || strm->state == SLZ_ST_LAST) {
 		strm->state = (strm->state == SLZ_ST_LAST) ? SLZ_ST_DONE : SLZ_ST_EOB;
@@ -1321,13 +1289,11 @@ int slz_finish(struct slz_stream *strm, unsigned char *buf, int room)
 		strm->state = SLZ_ST_DONE;
 	}
 
-	last = outlen;
 	flush_bits(strm);
-	copy_32b(strm->crc32);
-	copy_32b(strm->ilen);
-	dump_outbuf();
+	copy_32b(strm, strm->crc32);
+	copy_32b(strm, strm->ilen);
 	strm->state = SLZ_ST_END;
-	return outlen - last;
+	return strm->outbuf - buf;
 }
 
 
@@ -1350,14 +1316,20 @@ void prepare_dist_table()
 	}
 }
 
+
+/* block size for experimentations */
+#define BLK 32768
+
 int main(int argc, char **argv)
 {
 	int loops = 1;
 	int totin = 0;
+	int ofs;
+	int totout = 0;
 	int len;
 	struct slz_stream strm;
-	char *outbuf;
-	char *buffer;
+	unsigned char *outbuf;
+	unsigned char *buffer;
 	int bufsize = 32768;
 	int buflen;
 	struct stat instat;
@@ -1388,7 +1360,7 @@ int main(int argc, char **argv)
 		bufsize = (bufsize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 	}
 
-	outbuf = calloc(1, 32768+4096);
+	outbuf = calloc(1, BLK + 4096);
 	if (!outbuf) {
 		perror("calloc");
 		exit(1);
@@ -1409,22 +1381,25 @@ int main(int argc, char **argv)
 		}
 	}
 
-	totin = buflen * loops;
 	while (loops--) {
-		//write(1, gzip_hdr, sizeof(gzip_hdr));
 		len = slz_init(&strm, outbuf, bufsize);
-		write(1, outbuf, len);
-		//memset(refs, 0, sizeof(refs));
 
-		len = 0;
+		ofs = 0;
 		do {
-			encode(&strm, buffer + len, (buflen - len) > BLK ? BLK : buflen - len, (buflen - len) > BLK);
-			if (buflen - len > BLK)
-				len += BLK;
+			len += encode(&strm, outbuf + len, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs, (buflen - ofs) > BLK);
+			if (buflen - ofs > BLK) {
+				totout += len;
+				ofs += BLK;
+				write(1, outbuf, len);
+				len = 0;
+			}
 			else
-				len = buflen;
-		} while (len < buflen);
-		slz_finish(&strm, outbuf, bufsize);
+				ofs = buflen;
+		} while (ofs < buflen);
+		len += slz_finish(&strm, outbuf + len, bufsize);
+		totin += ofs;
+		totout += len;
+		write(1, outbuf, len);
 	}
 	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% lit=%d ref=%d crc32=%08x\n", totin, totout, totout * 100.0 / totin, lit, ref, strm.crc32);
 	return 0;
