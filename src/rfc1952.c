@@ -1127,10 +1127,8 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			continue;
 		}
 
-		if (pos - last >= 32768)
-			goto send_as_lit;
-
-		if (last >= pos)
+		/* We reject pos = last and pos > last+32768 */
+		if ((unsigned long)(pos - last - 1) >= 32768)
 			goto send_as_lit;
 
 		/* Note: cannot encode a length larger than 258 bytes */
