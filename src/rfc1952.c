@@ -557,7 +557,7 @@ uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 	return crc;
 }
 
-uint32_t update_crc(uint32_t crc, const void *buf, int len)
+static inline uint32_t update_crc(uint32_t crc, const void *buf, int len)
 {
 	//return rfc1952_crc(crc, buf, len);
 	return crc32_4bytes(crc, buf, len);
