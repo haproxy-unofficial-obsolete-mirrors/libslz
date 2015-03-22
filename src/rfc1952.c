@@ -798,168 +798,24 @@ static inline uint32_t hash(uint32_t a)
 	//return (a * 2654435761U) >> (32 - HASH_BITS); // used by lz4
 }
 
-/* Warning! this implementation *always* reads at least 4 bytes, so it must not
- * be called with max < 4.
+/* This function compares buffers <a> and <b> and reads 32 bits at a time
+ * during the approach. It relies on unaligned little endian memory accesses.
+ * <max> is the maximum number of bytes that can be read, so both <a> and <b>
+ * must have at least <max> bytes ahead. <max> may safely be null or negative
+ * if that simplifies computations in the caller.
  */
 static inline long memmatch(const unsigned char *a, const unsigned char *b, long max)
 {
-#if 0 // 1.047s
-	asm (
-	     "mov %%rsi, %%rcx\n\t"      // keep pointer to the beginning
-	     "lea -4(%%rsi,%2), %2\n\t"  // end pointer
-
-	     "5:\n\t"
-	     "movl (%%rsi), %%eax\n\t"
-	     "cmpl (%%rdi), %%eax\n\t"
-	     "jnz 1f\n\t"
-
-	     "lea  4(%%rsi),%%rsi\n\t"
-	     "lea  4(%%rdi),%%rdi\n\t"
-
-	     "cmpq %%rsi, %2\n\t"
-	     "jnb 5b\n\t"
-
-	     "1:\n\t"
-	     "lea 3(%2), %2\n\t"
-
-	     "2:\n\t"
-	     "cmpq %%rsi, %2\n\t"
-	     "jb 3f\n\t"
-
-	     "movb (%%rsi), %%al\n\t"
-	     "lea  1(%%rsi),%%rsi\n\t"
-	     "cmpb (%%rdi), %%al\n\t"
-	     "lea  1(%%rdi),%%rdi\n\t"
-	     "jz 2b\n\t"
-
-	     "4:\n\t"
-	     "lea  -1(%%rsi),%%rsi\n\t"
-
-	     "3:\n\t"
-	     "subq %%rcx, %%rsi\n\t"
-	     : "=S" (b), "=D" (a), "=r" (max) : "0" (b), "1" (a), "2" (max) : "rax", "rcx"
-	    );
-	return (long)b;
-
-
-#elif 0 // 1.042s
-	asm (
-	     "mov %%rsi, %%rcx\n\t"      // keep pointer to the beginning
-	     "lea -4(%%rsi,%2), %2\n\t"  // end pointer
-	     "jmp 5f\n\t"
-
-	     "4:\t\n"
-	     "lea  4(%%rsi),%%rsi\n\t"
-	     "lea  4(%%rdi),%%rdi\n\t"
-
-	     "0:\n\t"
-	     "cmpq %%rsi, %2\n\t"
-	     "jb 1f\n\t"
-	     "5:\n\t"
-	     "movl (%%rsi), %%eax\n\t"
-	     "cmpl (%%rdi), %%eax\n\t"
-	     "jz 4b\n\t"
-
-	     "1:\n\t"
-	     "lea 3(%2), %2\n\t"
-
-	     "2:\n\t"
-	     "cmpq %%rsi, %2\n\t"
-	     "jb 3f\n\t"
-	     "movb (%%rsi), %%al\n\t"
-	     "lea  1(%%rsi),%%rsi\n\t"
-	     "cmpb (%%rdi), %%al\n\t"
-	     "lea  1(%%rdi),%%rdi\n\t"
-	     "jz 2b\n\t"
-	     "lea  -1(%%rsi),%%rsi\n\t"
-
-	     "3:\n\t"
-	     "subq %%rcx, %%rsi\n\t"
-	     : "=S" (b), "=D" (a), "=r" (max) : "0" (b), "1" (a), "2" (max) : "rax", "rcx"
-	    );
-	return (long)b;
-#elif 0 // 1.117s
-	long len;
-	const uint32_t *s = (uint32_t *)a;
-	const uint32_t *d = (uint32_t *)b;
-	const uint32_t *end = (uint32_t *)(a + max - 4);
-
-	len = 0;
-	do {
-		if (*s++ != *d++)
-			break;
-	} while (s <= end);
-
-	//while (*(uint32_t *)&a[len] == *(uint32_t *)&b[len]) {
-	//	len += 4;
-	//	if (len > max - 4)
-	//		break;
-	//}
-
-	while (len < max) {
-		if (a[len] != b[len])
-			break;
-		len++;
-	}
-	return len;
-#elif 1 ///////////////////////////// experiment
 	long len;
 	uint32_t xor;
 
 	len = 0;
-	do {
+
+	while (len + 4 <= max) {
 		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
+		if (xor)
+			goto diff;
 		len += 4;
-		if (xor) {
-			if (xor & 0xffff) {
-				if (xor & 0xff)
-					return len - 4;
-				return len - 3;
-			}
-			if (xor & 0xffffff)
-				return len - 2;
-			return len - 1;
-		}
-	} while (len + 4 <= max);
-
-	while (len < max) {
-		if (a[len] != b[len])
-			break;
-		len++;
-	}
-	return len;
-#elif 1 // 1.074s
-	long len;
-
-	len = 0;
-	do {
-		if (*(uint32_t *)&a[len] != *(uint32_t *)&b[len])
-			break;
-		len += 4;
-	} while (len <= max - 4);
-
-	//while (*(uint32_t *)&a[len] == *(uint32_t *)&b[len]) {
-	//	len += 4;
-	//	if (len > max - 4)
-	//		break;
-	//}
-
-	while (len < max) {
-		if (a[len] != b[len])
-			break;
-		len++;
-	}
-	return len;
-#elif 0 // 1.077ss
-	long len;
-
-	len = 0;
-	while (1) {
-		if (*(uint32_t *)&a[len] != *(uint32_t *)&b[len])
-			break;
-		len += 4;
-		if (len > max - 4)
-			break;
 	}
 
 	while (len < max) {
@@ -968,90 +824,16 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 		len++;
 	}
 	return len;
-#else // 1.546s
-	// pass src1 in rsi, src2 in rdi, byte count in %3, retrieve length in %0
-	//fprintf(stderr, "a=%p b=%p max=%d *a=%c *b=%c\n", a, b, max, *a, *b);
-	// warning: the code is wrong, as rep/cmp always increments the pointers
-	// before performing the comparison so we need to decrement the pointer
-	// depending on the comparison result
 
-	// Note: gcc's assembly looks completely bogus as it doesn't mark %3 as
-	// clobberred! Removing the "andq" below is enough for it to stop
-	// segfaulting, proving that clobbering is ignored :-(
-	// also when marking other registers as clobbered, it manages to add a
-	// "push %rbx" around the function while rbx is neither used not referenced.
-	asm volatile (
-	    "movq %2, %%rcx\n\t"
-	    "movq %%rsi, %%rax\n\t" // keep src1 save in order to measure length at the end
-#if MEMMATCH_PER_QWORD // very very slow
-	    "andq $7, %2\n\t"
-	    "shrq $3, %%rcx\n\t"
-	    "repz cmpsq\n\t"
-	    "jz 0f\n\t"
-	    "sub $8, %%rsi\n\t"
-	    "sub $8, %%rdi\n\t"
-	    "add $1, %%rcx\n\t"
-	    "0:\n\t"
-
-	    /* at this point, rcx = #matching bytes / 8, rsi/rdi point to the
-	     * first non-matching or non-evaluated qword. Let's simply switch
-	     * to byte-mode matching by multiplying by 8 again and picking the
-	     * trailing bits from %rdx.
-	     */
-	    "shlq $3, %%rcx\n\t"
-	    "orq %2, %%rcx\n\t"
-#elif 1 // MEMMATCH_PER_DWORD // very slow
-	    "andq $3, %2\n\t"
-	    "shrq $2, %%rcx\n\t"
-	    "repz cmpsd\n\t"
-	    "jz 0f\n\t"
-	    "lea -4(%%rsi),%%rsi\n\t"
-	    "lea -4(%%rdi),%%rdi\n\t"
-	    "lea 1(%%rcx),%%rcx\n\t"
-	    //"sub $4, %%rsi\n\t"
-	    //"sub $4, %%rdi\n\t"
-	    //"add $1, %%rcx\n\t"
-	    "0:\n\t"
-
-	    /* at this point, rcx = #matching bytes / 8, rsi/rdi point to the
-	     * first non-matching or non-evaluated qword. Let's simply switch
-	     * to byte-mode matching by multiplying by 8 again and picking the
-	     * trailing bits from %rdx.
-	     */
-	    //"shlq $2, %%rcx\n\t"
-	    //"orq %2, %%rcx\n\t"
-	    "lea 0(%2,%%rcx,4),%%rcx\n\t"
-#elif MEMMATCH_PER_WORD // very slow
-	    "andq $1, %2\n\t"
-	    "shrq $1, %%rcx\n\t"
-	    "repz cmpsw\n\t"
-	    "jz 0f\n\t"
-	    "sub $2, %%rsi\n\t"
-	    "sub $2, %%rdi\n\t"
-	    "add $1, %%rcx\n\t"
-	    "0:\n\t"
-
-	    /* at this point, rcx = #matching bytes / 8, rsi/rdi point to the
-	     * first non-matching or non-evaluated qword. Let's simply switch
-	     * to byte-mode matching by multiplying by 8 again and picking the
-	     * trailing bits from %rdx.
-	     */
-	    "shlq $1, %%rcx\n\t"
-	    "orq %2, %%rcx\n\t"
-#endif
-	    "repz cmpsb\n\t"
-	    "jz 1f\n\t"
-	    "lea -1(%%rsi),%%rsi\n\t"
-	    //"dec %%rsi\n\t"
-	    "1:\n\t"
-	    /* here we're supposed to have reached the first non-matching byte
-	     * or the end.
-	     */
-	    "subq %%rax, %%rsi\n\t"
-	    : "=S" (b), "=D" (a), "=r" (max) : "0" (b), "1" (a), "2" (max) : "rax", "rcx"
-	    );
-	return (long)b;
-#endif
+ diff:
+	if (xor & 0xffff) {
+		if (xor & 0xff)
+			return len;
+		return len + 1;
+	}
+	if (xor & 0xffffff)
+		return len + 2;
+	return len + 3;
 }
 
 /* Compresses <ilen> bytes from <in> into <out>. The output result may be up to
@@ -1158,9 +940,7 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			goto send_as_lit;
 
 		/* Note: cannot encode a length larger than 258 bytes */
-		mlen = 4;
-		if (rem >= 8)
-			mlen = memmatch(in + pos + 4, in + last + 4, (rem > 258 ? 258 : rem) - 4) + 4;
+		mlen = memmatch(in + pos + 4, in + last + 4, (rem > 258 ? 258 : rem) - 4) + 4;
 
 		/* found a matching entry */
 
