@@ -1132,9 +1132,9 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			goto send_as_lit;
 
 		/* Note: cannot encode a length larger than 258 bytes */
-		mlen = memmatch(in + pos, in + last, rem > 258 ? 258 : rem);
-		if (mlen < 3)
-			goto send_as_lit;
+		mlen = 4;
+		if (rem >= 8)
+			mlen = memmatch(in + pos + 4, in + last + 4, (rem > 258 ? 258 : rem) - 4) + 4;
 
 		/* found a matching entry */
 
