@@ -902,6 +902,32 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 		len++;
 	}
 	return len;
+#elif 1 ///////////////////////////// experiment
+	long len;
+	uint32_t xor;
+
+	len = 0;
+	do {
+		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
+		len += 4;
+		if (xor) {
+			if (xor & 0xffff) {
+				if (xor & 0xff)
+					return len - 4;
+				return len - 3;
+			}
+			if (xor & 0xffffff)
+				return len - 2;
+			return len - 1;
+		}
+	} while (len + 4 <= max);
+
+	while (len < max) {
+		if (a[len] != b[len])
+			break;
+		len++;
+	}
+	return len;
 #elif 1 // 1.074s
 	long len;
 
