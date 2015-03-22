@@ -523,7 +523,7 @@ static inline uint32_t crc32_uint32(uint32_t data)
 	return data;
 }
 
-// Modified version originally from RFC1952, working with non-inverting CRCs
+/* Modified version originally from RFC1952, working with non-inverting CRCs */
 uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 {
 	int n;
@@ -533,6 +533,7 @@ uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 	return crc;
 }
 
+/* This version computes the crc32 over 32 bits at a time */
 uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 {
 	while (len >= 4) {
@@ -557,9 +558,9 @@ uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 	return crc;
 }
 
+/* uses the most suitable crc32 function to update crc on <buf, len> */
 static inline uint32_t update_crc(uint32_t crc, const void *buf, int len)
 {
-	//return rfc1952_crc(crc, buf, len);
 	return crc32_4bytes(crc, buf, len);
 }
 
@@ -713,9 +714,7 @@ static inline void send_huff(struct slz_stream *strm, uint32_t code)
 
 static inline void send_eob(struct slz_stream *strm)
 {
-	//fprintf(stderr, "eob\n");
-	/* end of block = 256 */
-	send_huff(strm, 256);
+	send_huff(strm, 256); // cf rfc1951: 256 = EOB
 }
 
 /* copies at most <len> litterals from <buf>, returns the amount of data
@@ -734,7 +733,6 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 
 	strm->state = more ? SLZ_ST_EOB : SLZ_ST_DONE;
 
-	//fprintf(stderr, "len=%d more=%d\n", len, more);
 	enqueue(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
 	flush_bits(strm);
 	copy_16b(strm, len);  // len
@@ -787,15 +785,7 @@ unsigned int lit = 0, ref = 0;
  */
 static inline uint32_t hash(uint32_t a)
 {
-	//return do_crc(&a, 4) >> (32 - HASH_BITS);
-	//return do_crc(&a, 4) & ((1 << HASH_BITS) - 1);
 	return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
-	//return ((a << 2) ^ (a << 7) ^ (a << 12) ^ (a << 20)) >> (32 - HASH_BITS);
-	//return (a + (a * 4) + (a * 128) + (a * 4096) + (a * 1048576)) >> (32 - HASH_BITS);
-	//return (a * 1052805) >> (32 - HASH_BITS); // same as above
-	//return (- a - (a >> 2) - (a >> 4) + (a >> 6)) & ((1 << HASH_BITS) - 1);
-	//return (a * 0xc4b5a687) >> (32 - HASH_BITS);
-	//return (a * 2654435761U) >> (32 - HASH_BITS); // used by lz4
 }
 
 /* This function compares buffers <a> and <b> and reads 32 or 64 bits at a time
@@ -892,7 +882,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 	uint32_t plit = 0;
 	uint32_t bit9 = 0;
 	uint32_t dist, code;
-	uint32_t saved = 0;
 	uint64_t refs[1 << HASH_BITS] = { };
 
 	strm->outbuf = out;
@@ -906,11 +895,8 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 #else
 		word = *(uint32_t *)&in[pos];
 #endif
-		//word &= 0x00FFFFFF;
-		//printf("%d %08x\n", pos, word);
 		h = hash(word);
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
-		//__builtin_prefetch(refs + h, 1, 0);
 		crc = crc32_char(crc, word);
 		ent = refs[h];
 		last = (uint32_t)ent;
@@ -931,6 +917,7 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		 * A non-colliding hash gives 33025 instead of 35662 (-7.4%),
 		 * and keeping the last two entries gives 31724 (-11.0%).
 		 */
+		int saved = 0;
 		int bestpos = 0;
 		int bestlen = 0;
 		int firstlen = 0;
@@ -997,7 +984,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			goto send_as_lit;
 
 		/* first, copy pending literals */
-		//fprintf(stderr, "dumping %d literals from %ld bit9=%d\n", plit, pos - 1 - plit, bit9);
 		while (plit) {
 			/* Huffman encoding requires 9 bits for octets 144..255, so this
 			 * is a waste of space for binary data. Switching between Huffman
@@ -1011,7 +997,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			else
 				len = copy_lit_huff(strm, in + pos - plit, plit, 1);
 
-			//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 			plit -= len;
 		}
 		bit9 = 0;
@@ -1019,11 +1004,9 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		ref += mlen; // for statistics
 		rem -= mlen;
 
-		//crc = update_crc(crc, in + pos, mlen); // if CRC is done per block
 		crc = update_crc(crc, in + pos + 1, mlen - 1);
 
 		/* use mode 01 - fixed huffman */
-
 		if (strm->state == SLZ_ST_EOB) {
 			strm->state = SLZ_ST_FIXED;
 			enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
@@ -1034,7 +1017,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 
 		/* in fixed huffman mode, dist is fixed 5 bits */
 		enqueue(strm, dist >> 5, dist & 0x1f);
-
 		pos += mlen;
 
 #ifndef UNALIGNED_FASTER
@@ -1063,7 +1045,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		else
 			len = copy_lit_huff(strm, in + pos - plit, plit, more);
 
-		//crc = update_crc(crc, in + pos - plit, len); // if CRC is done per block
 		plit -= len;
 	}
 
