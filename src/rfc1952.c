@@ -996,8 +996,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 
 			plit -= len;
 		}
-		bit9 = 0;
-		rem -= mlen;
 		crc = update_crc(crc, in + pos + 1, mlen - 1);
 
 		/* use mode 01 - fixed huffman */
@@ -1011,6 +1009,8 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 
 		/* in fixed huffman mode, dist is fixed 5 bits */
 		enqueue(strm, dist >> 5, dist & 0x1f);
+		bit9 = 0;
+		rem -= mlen;
 		pos += mlen;
 
 #ifndef UNALIGNED_FASTER
