@@ -460,6 +460,9 @@ static const uint32_t len_fh[259] = {
 static uint32_t crc32_fast[4][256];
 static uint32_t fh_dist_table[32768];
 
+/* Log2 of the size of the hash table used for the references table. */
+#define HASH_BITS 13
+
 enum slz_state {
 	SLZ_ST_INIT,  /* stream initialized */
 	SLZ_ST_EOB,   /* header or end of block already sent */
@@ -770,11 +773,6 @@ static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *
 	return len;
 }
 
-#define HASH_BITS 13
-
-/* stats */
-unsigned int lit = 0, ref = 0;
-
 /* format:
  * bit0..31  = word
  * bit32..63 = last position in buffer of similar content
@@ -952,7 +950,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			rem--;
 			plit++;
 			bit9 += ((unsigned char)word >= 144);
-			lit++; // for statistics
 			pos++;
 			continue;
 		}
@@ -1000,10 +997,7 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 			plit -= len;
 		}
 		bit9 = 0;
-
-		ref += mlen; // for statistics
 		rem -= mlen;
-
 		crc = update_crc(crc, in + pos + 1, mlen - 1);
 
 		/* use mode 01 - fixed huffman */
@@ -1031,7 +1025,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 	if (__builtin_expect(rem, 0)) {
 		/* we're reading the 1..3 last bytes */
 		plit += rem;
-		lit  += rem;
 		do {
 			crc = crc32_char(crc, in[pos]);
 			bit9 += ((unsigned char)in[pos++] >= 144);
@@ -1216,6 +1209,6 @@ int main(int argc, char **argv)
 		totout += len;
 		write(1, outbuf, len);
 	}
-	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% lit=%d ref=%d crc32=%08x\n", totin, totout, totout * 100.0 / totin, lit, ref, strm.crc32);
+	fprintf(stderr, "totin=%d totout=%d ratio=%.2f%% crc32=%08x\n", totin, totout, totout * 100.0 / totin, strm.crc32);
 	return 0;
 }
