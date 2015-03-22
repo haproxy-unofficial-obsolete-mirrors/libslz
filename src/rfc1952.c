@@ -811,21 +811,26 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 
 	len = 0;
 
-	while (len + 4 <= max) {
+	while (1) {
+		if (len + 8 > max) {
+			while (len < max) {
+				if (a[len] != b[len])
+					break;
+				len++;
+			}
+			return len;
+		}
+
 		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
 		if (xor)
-			goto diff;
+			break;
+		len += 4;
+		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
+		if (xor)
+			break;
 		len += 4;
 	}
 
-	while (len < max) {
-		if (a[len] != b[len])
-			break;
-		len++;
-	}
-	return len;
-
- diff:
 	if (xor & 0xffff) {
 		if (xor & 0xff)
 			return len;
