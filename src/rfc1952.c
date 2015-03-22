@@ -798,7 +798,7 @@ static inline uint32_t hash(uint32_t a)
 	//return (a * 2654435761U) >> (32 - HASH_BITS); // used by lz4
 }
 
-/* This function compares buffers <a> and <b> and reads 32 bits at a time
+/* This function compares buffers <a> and <b> and reads 32 or 64 bits at a time
  * during the approach. It relies on unaligned little endian memory accesses.
  * <max> is the maximum number of bytes that can be read, so both <a> and <b>
  * must have at least <max> bytes ahead. <max> may safely be null or negative
@@ -807,12 +807,12 @@ static inline uint32_t hash(uint32_t a)
 static inline long memmatch(const unsigned char *a, const unsigned char *b, long max)
 {
 	long len;
-	uint32_t xor;
+	unsigned long xor;
 
 	len = 0;
 
 	while (1) {
-		if (len + 8 > max) {
+		if (len + 2 * sizeof(long) > max) {
 			while (len < max) {
 				if (a[len] != b[len])
 					break;
@@ -821,14 +821,31 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 			return len;
 		}
 
-		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
+		xor = *(long *)&a[len] ^ *(long *)&b[len];
 		if (xor)
 			break;
-		len += 4;
-		xor = *(uint32_t *)&a[len] ^ *(uint32_t *)&b[len];
+		len += sizeof(long);
+
+		xor = *(long *)&a[len] ^ *(long *)&b[len];
 		if (xor)
 			break;
-		len += 4;
+		len += sizeof(long);
+	}
+
+	if (sizeof(long) > 4 && !(xor & 0xffffffff)) {
+		/* This code is optimized out on 32-bit archs, but we still
+		 * need to shift in two passes to avoid a warning. It is
+		 * properly optimized out as a single shift.
+		 */
+		xor >>= 16; xor >>= 16;
+		if (xor & 0xffff) {
+			if (xor & 0xff)
+				return len + 4;
+			return len + 5;
+		}
+		if (xor & 0xffffff)
+			return len + 6;
+		return len + 7;
 	}
 
 	if (xor & 0xffff) {
