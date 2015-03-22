@@ -789,8 +789,8 @@ static inline uint32_t hash(uint32_t a)
 {
 	//return do_crc(&a, 4) >> (32 - HASH_BITS);
 	//return do_crc(&a, 4) & ((1 << HASH_BITS) - 1);
-	//return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
-	return ((a << 2) ^ (a << 7) ^ (a << 12) ^ (a << 20)) >> (32 - HASH_BITS);
+	return ((a << 19) + (a << 6) - a) >> (32 - HASH_BITS);
+	//return ((a << 2) ^ (a << 7) ^ (a << 12) ^ (a << 20)) >> (32 - HASH_BITS);
 	//return (a + (a * 4) + (a * 128) + (a * 4096) + (a * 1048576)) >> (32 - HASH_BITS);
 	//return (a * 1052805) >> (32 - HASH_BITS); // same as above
 	//return (- a - (a >> 2) - (a >> 4) + (a >> 6)) & ((1 << HASH_BITS) - 1);
@@ -799,17 +799,17 @@ static inline uint32_t hash(uint32_t a)
 }
 
 /* This function compares buffers <a> and <b> and reads 32 or 64 bits at a time
- * during the approach. It relies on unaligned little endian memory accesses.
- * <max> is the maximum number of bytes that can be read, so both <a> and <b>
- * must have at least <max> bytes ahead. <max> may safely be null or negative
- * if that simplifies computations in the caller.
+ * during the approach. It makes us of unaligned little endian memory accesses
+ * on capable architectures. <max> is the maximum number of bytes that can be
+ * read, so both <a> and <b> must have at least <max> bytes ahead. <max> may
+ * safely be null or negative if that simplifies computations in the caller.
  */
 static inline long memmatch(const unsigned char *a, const unsigned char *b, long max)
 {
-	long len;
-	unsigned long xor;
+	long len = 0;
 
-	len = 0;
+#ifdef UNALIGNED_LE_OK
+	unsigned long xor;
 
 	while (1) {
 		if (len + 2 * sizeof(long) > max) {
@@ -856,6 +856,19 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 	if (xor & 0xffffff)
 		return len + 2;
 	return len + 3;
+
+#else // UNALIGNED_LE_OK
+	/* This is the generic version for big endian or unaligned-incompatible
+	 * architectures.
+	 */
+	while (len < max) {
+		if (a[len] != b[len])
+			break;
+		len++;
+	}
+	return len;
+
+#endif
 }
 
 /* Compresses <ilen> bytes from <in> into <out>. The output result may be up to
