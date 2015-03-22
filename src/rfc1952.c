@@ -859,6 +859,37 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 #endif
 }
 
+/* sets <count> bytes to 0xff in <refs>. <count> must be a multiple of 16 longs
+ * and <refs> must be at least one count in length. It's supposed to be applied
+ * to 64-bit aligned data exclusively, which makes it slightly faster than the
+ * regular memset() since no alignment check is performed.
+ */
+void reset_refs(uint64_t *refs, long count)
+{
+	long *dest = (void *)refs;
+	long *end  = (void *)dest + count;
+
+	do {
+		dest[ 0] = -1;
+		dest[ 1] = -1;
+		dest[ 2] = -1;
+		dest[ 3] = -1;
+		dest[ 4] = -1;
+		dest[ 5] = -1;
+		dest[ 6] = -1;
+		dest[ 7] = -1;
+		dest[ 8] = -1;
+		dest[ 9] = -1;
+		dest[10] = -1;
+		dest[11] = -1;
+		dest[12] = -1;
+		dest[13] = -1;
+		dest[14] = -1;
+		dest[15] = -1;
+		dest += 16;
+	} while (dest < end);
+}
+
 /* Compresses <ilen> bytes from <in> into <out>. The output result may be up to
  * 5 bytes larger than the input, to which 2 extra bytes may be added to send
  * the last chunk due to BFINAL+EOB encoding (10 bits) when <more> is not set.
@@ -880,7 +911,9 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 	uint32_t plit = 0;
 	uint32_t bit9 = 0;
 	uint32_t dist, code;
-	uint64_t refs[1 << HASH_BITS] = { };
+	uint64_t refs[1 << HASH_BITS];
+
+	reset_refs(refs, sizeof(refs));
 
 	strm->outbuf = out;
 
