@@ -539,7 +539,58 @@ uint32_t rfc1952_crc(uint32_t crc, const unsigned char *buf, int len)
 /* This version computes the crc32 over 32 bits at a time */
 uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 {
-	while (len >= 4) {
+	const unsigned char *end = buf + len;
+
+	while (buf <= end - 16) {
+#ifdef UNALIGNED_LE_OK
+		crc ^= *(uint32_t *)buf;
+		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
+		      crc32_fast[2][(crc >>  8) & 0xff] ^
+		      crc32_fast[1][(crc >> 16) & 0xff] ^
+		      crc32_fast[0][(crc >> 24) & 0xff];
+
+		crc ^= *(uint32_t *)(buf + 4);
+		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
+		      crc32_fast[2][(crc >>  8) & 0xff] ^
+		      crc32_fast[1][(crc >> 16) & 0xff] ^
+		      crc32_fast[0][(crc >> 24) & 0xff];
+
+		crc ^= *(uint32_t *)(buf + 8);
+		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
+		      crc32_fast[2][(crc >>  8) & 0xff] ^
+		      crc32_fast[1][(crc >> 16) & 0xff] ^
+		      crc32_fast[0][(crc >> 24) & 0xff];
+
+		crc ^= *(uint32_t *)(buf + 12);
+		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
+		      crc32_fast[2][(crc >>  8) & 0xff] ^
+		      crc32_fast[1][(crc >> 16) & 0xff] ^
+		      crc32_fast[0][(crc >> 24) & 0xff];
+#else
+		crc = crc32_fast[3][(buf[0] ^ (crc >>  0)) & 0xff] ^
+		      crc32_fast[2][(buf[1] ^ (crc >>  8)) & 0xff] ^
+		      crc32_fast[1][(buf[2] ^ (crc >> 16)) & 0xff] ^
+		      crc32_fast[0][(buf[3] ^ (crc >> 24)) & 0xff];
+
+		crc = crc32_fast[3][(buf[4] ^ (crc >>  0)) & 0xff] ^
+		      crc32_fast[2][(buf[5] ^ (crc >>  8)) & 0xff] ^
+		      crc32_fast[1][(buf[6] ^ (crc >> 16)) & 0xff] ^
+		      crc32_fast[0][(buf[7] ^ (crc >> 24)) & 0xff];
+
+		crc = crc32_fast[3][(buf[8] ^ (crc >>  0)) & 0xff] ^
+		      crc32_fast[2][(buf[9] ^ (crc >>  8)) & 0xff] ^
+		      crc32_fast[1][(buf[10] ^ (crc >> 16)) & 0xff] ^
+		      crc32_fast[0][(buf[11] ^ (crc >> 24)) & 0xff];
+
+		crc = crc32_fast[3][(buf[12] ^ (crc >>  0)) & 0xff] ^
+		      crc32_fast[2][(buf[13] ^ (crc >>  8)) & 0xff] ^
+		      crc32_fast[1][(buf[14] ^ (crc >> 16)) & 0xff] ^
+		      crc32_fast[0][(buf[15] ^ (crc >> 24)) & 0xff];
+#endif
+		buf += 16;
+	}
+
+	while (buf <= end - 4) {
 #ifdef UNALIGNED_LE_OK
 		crc ^= *(uint32_t *)buf;
 		crc = crc32_fast[3][(crc >>  0) & 0xff] ^
@@ -553,10 +604,9 @@ uint32_t crc32_4bytes(uint32_t crc, const unsigned char *buf, int len)
 		      crc32_fast[0][(buf[3] ^ (crc >> 24)) & 0xff];
 #endif
 		buf += 4;
-		len -= 4;
 	}
 
-	while (len--)
+	while (buf < end)
 		crc = crc32_fast[0][(crc ^ *buf++) & 0xff] ^ (crc >> 8);
 	return crc;
 }
