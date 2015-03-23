@@ -27,7 +27,7 @@ all: $(BINS)
 exp-lm: src/exp-lm.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
-rfc1952: src/rfc1952.o
+rfc1952: src/rfc1952.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 zdec: src/zdec.o
