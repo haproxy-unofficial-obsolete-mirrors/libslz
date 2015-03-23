@@ -940,13 +940,14 @@ void reset_refs(uint64_t *refs, long count)
 	} while (dest < end);
 }
 
-/* Compresses <ilen> bytes from <in> into <out>. The output result may be up to
- * 5 bytes larger than the input, to which 2 extra bytes may be added to send
- * the last chunk due to BFINAL+EOB encoding (10 bits) when <more> is not set.
- * The caller is responsible for ensuring there is enough room in the output
- * buffer for this. The amount of output bytes is returned.
+/* Compresses <ilen> bytes from <in> into <out> according to RFC1951. The
+ * output result may be up to 5 bytes larger than the input, to which 2 extra
+ * bytes may be added to send the last chunk due to BFINAL+EOB encoding (10
+ * bits) when <more> is not set. The caller is responsible for ensuring there
+ * is enough room in the output buffer for this. The amount of output bytes is
+ * returned, and no CRC is computed.
  */
-long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
+long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
 {
 	long rem = ilen;
 	unsigned long pos = 0;
@@ -1124,6 +1125,15 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 	return strm->outbuf - out;
 }
 
+/* Encodes the block according to rfc1952. This means that the CRC of the input
+ * block is computed according to the CRC32 algorithm. The number of output bytes
+ * is returned.
+ */
+static inline long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
+{
+	strm->crc32 = update_crc(strm->crc32, in, ilen);
+	return slz_rfc1951_encode(strm, out, in, ilen, more);
+}
 
 /* Sends the gzip header for stream <strm> into buffer <buf>. When it's done,
  * the stream state is updated to SLZ_ST_EOB. It returns the number of bytes
@@ -1272,8 +1282,7 @@ int main(int argc, char **argv)
 
 		ofs = 0;
 		do {
-			strm.crc32 = update_crc(strm.crc32, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs);
-			len += encode(&strm, outbuf + len, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs, (buflen - ofs) > BLK);
+			len += slz_rfc1952_encode(&strm, outbuf + len, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs, (buflen - ofs) > BLK);
 			if (buflen - ofs > BLK) {
 				totout += len;
 				ofs += BLK;
