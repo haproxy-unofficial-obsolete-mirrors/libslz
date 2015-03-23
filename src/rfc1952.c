@@ -906,7 +906,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 	uint32_t h;
 	uint64_t ent;
 
-	uint32_t crc = strm->crc32;
 	uint32_t len;
 	uint32_t plit = 0;
 	uint32_t bit9 = 0;
@@ -928,7 +927,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 #endif
 		h = hash(word);
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
-		crc = crc32_char(crc, word);
 		ent = refs[h];
 		last = (uint32_t)ent;
 		ent >>= 32;
@@ -1029,7 +1027,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 
 			plit -= len;
 		}
-		crc = update_crc(crc, in + pos + 1, mlen - 1);
 
 		/* use mode 01 - fixed huffman */
 		if (strm->state == SLZ_ST_EOB) {
@@ -1059,7 +1056,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		/* we're reading the 1..3 last bytes */
 		plit += rem;
 		do {
-			crc = crc32_char(crc, in[pos]);
 			bit9 += ((unsigned char)in[pos++] >= 144);
 		} while (--rem);
 	}
@@ -1074,7 +1070,6 @@ long encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in
 		plit -= len;
 	}
 
-	strm->crc32 = crc;
 	strm->ilen += ilen;
 	return strm->outbuf - out;
 }
@@ -1227,6 +1222,7 @@ int main(int argc, char **argv)
 
 		ofs = 0;
 		do {
+			strm.crc32 = update_crc(strm.crc32, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs);
 			len += encode(&strm, outbuf + len, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs, (buflen - ofs) > BLK);
 			if (buflen - ofs > BLK) {
 				totout += len;
