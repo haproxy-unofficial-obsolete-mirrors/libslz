@@ -1317,7 +1317,13 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
 	return (s2 << 16) + s1;
 }
 
-/* Computes the adler32 sum on <buf> for <len> bytes. */
+/* Computes the adler32 sum on <buf> for <len> bytes. It avoids the expensive
+ * modulus by retrofitting the number of bytes missed between 65521 and 65536
+ * which is easy to count : For every sum above 65536, the modulus is offset
+ * by (65536-65521) = 15. So for any value, we can count the accumulated extra
+ * values by dividing the sum by 65536 and multiplying this value by
+ * (65536-65521). That's easier with a drawing with boxes and marbles.
+ */
 uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 {
 	long s1 = crc & 0xffff;
@@ -1336,8 +1342,25 @@ uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 			s1 = (s1 + buf[n]);
 			s2 = (s2 + s1);
 		}
-		s1 %= 65521;
-		s2 %= 65521;
+
+		/* Largest value here is 2^12 * 255 = 1044480 < 2^20. We can
+		 * still overflow once, but not twice because the right hand
+		 * size is 225 max, so the total is 65761. However we also
+		 * have to take care of the values between 65521 and 65536.
+		 */
+		s1 = (s1 & 0xffff) + 15 * (s1 >> 16);
+		if (s1 > 65521)
+			s1 -= 65521;
+
+		/* For s2, the largest value is estimated to 2^32-1 for
+		 * simplicity, so the right hand side is about 15*65535
+		 * = 983025. We can overflow twice at most.
+		 */
+		s2 = (s2 & 0xffff) + 15 * (s2 >> 16);
+		s2 = (s2 & 0xffff) + 15 * (s2 >> 16);
+		if (s2 > 65521)
+			s2 -= 65521;
+
 		buf += blk;
 	} while (len);
 	return (s2 << 16) + s1;
