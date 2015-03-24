@@ -1322,7 +1322,10 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
  * which is easy to count : For every sum above 65536, the modulus is offset
  * by (65536-65521) = 15. So for any value, we can count the accumulated extra
  * values by dividing the sum by 65536 and multiplying this value by
- * (65536-65521). That's easier with a drawing with boxes and marbles.
+ * (65536-65521). That's easier with a drawing with boxes and marbles. It gives
+ * this :
+ *          x % 65521 = (x % 65536) + (x / 65536) * (65536 - 65521)
+ *                    = (x & 0xffff) + (x >> 16) * 15.
  */
 uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 {
