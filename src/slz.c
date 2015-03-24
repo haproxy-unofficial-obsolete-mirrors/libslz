@@ -1321,18 +1321,26 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
  * a single call (2^(64-8)/2), since s2 may contain about len*len*255 (in fact
  * more like len*len/2*255).
  */
-uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, int len)
+uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 {
 	uint64_t s1 = crc & 0xffff;
 	uint64_t s2 = (crc >> 16);
-	int n;
+	long blk;
+	long n;
 
-	for (n = 0; n < len; n++) {
-		s1 = (s1 + buf[n]);
-		s2 = (s2 + s1);
-	}
-	s1 %= 65521;
-	s2 %= 65521;
+	do {
+		blk = len;
+		if (blk > 1U << 28)
+			blk = 1U << 28;
+		len -= blk;
+
+		for (n = 0; n < blk; n++) {
+			s1 = (s1 + buf[n]);
+			s2 = (s2 + s1);
+		}
+		s1 %= 65521;
+		s2 %= 65521;
+	} while (len);
 	return (s2 << 16) + s1;
 }
 
