@@ -1317,13 +1317,32 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
 	return (s2 << 16) + s1;
 }
 
+/* warning, counter s2 may overflow if fed with more than about 2^28 bytes in
+ * a single call (2^(64-8)/2), since s2 may contain about len*len*255 (in fact
+ * more like len*len/2*255).
+ */
+uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, int len)
+{
+	uint64_t s1 = crc & 0xffff;
+	uint64_t s2 = (crc >> 16);
+	int n;
+
+	for (n = 0; n < len; n++) {
+		s1 = (s1 + buf[n]);
+		s2 = (s2 + s1);
+	}
+	s1 %= 65521;
+	s2 %= 65521;
+	return (s2 << 16) + s1;
+}
+
 /* Encodes the block according to rfc1950. This means that the CRC of the input
  * block is computed according to the ADLER32 algorithm. The number of output
  * bytes is returned.
  */
 long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
 {
-	strm->crc32 = slz_adler32_by1(strm->crc32, in, ilen);
+	strm->crc32 = slz_adler32_block(strm->crc32, in, ilen);
 	return slz_rfc1951_encode(strm, out, in, ilen, more);
 }
 
