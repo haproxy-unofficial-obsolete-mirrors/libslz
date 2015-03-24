@@ -42,7 +42,7 @@ struct slz_stream {
 /* Functions specific to rfc1951 (deflate) */
 void slz_prepare_dist_table();
 long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
-void slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf);
 int slz_rfc1951_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* Functions specific to rfc1952 (gzip) */

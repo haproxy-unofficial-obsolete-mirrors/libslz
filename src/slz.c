@@ -807,15 +807,16 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 }
 
 /* Initializes stream <strm>. The CRC is set to zero, as requested by gzip.
- * For zlib, it must be set to 1.
+ * For zlib, it must be set to 1. The function always returns 0.
  */
-void slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
+int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->state = SLZ_ST_INIT;
 	strm->crc32 = 0;
 	strm->ilen  = 0;
 	strm->qbits = 0;
 	strm->queue = 0;
+	return 0;
 }
 
 /* Flushes any pending for stream <strm> into buffer <buf>, then sends BTYPE=1
