@@ -54,4 +54,11 @@ int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf);
 int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf);
 int slz_rfc1952_finish(struct slz_stream *strm, unsigned char *buf);
 
+/* Functions specific to rfc1950 (zlib) */
+uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len);
+long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
+int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf);
+
 #endif

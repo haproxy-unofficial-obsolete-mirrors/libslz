@@ -1182,3 +1182,189 @@ int slz_rfc1952_finish(struct slz_stream *strm, unsigned char *buf)
 
 	return strm->outbuf - buf;
 }
+
+
+/* RFC1950-specific stuff. This is for the Zlib stream format.
+ * From RFC1950 (zlib) :
+ *
+
+   2.2. Data format
+
+      A zlib stream has the following structure:
+
+           0   1
+         +---+---+
+         |CMF|FLG|   (more-->)
+         +---+---+
+
+
+      (if FLG.FDICT set)
+
+           0   1   2   3
+         +---+---+---+---+
+         |     DICTID    |   (more-->)
+         +---+---+---+---+
+
+         +=====================+---+---+---+---+
+         |...compressed data...|    ADLER32    |
+         +=====================+---+---+---+---+
+
+      Any data which may appear after ADLER32 are not part of the zlib
+      stream.
+
+      CMF (Compression Method and flags)
+         This byte is divided into a 4-bit compression method and a 4-
+         bit information field depending on the compression method.
+
+            bits 0 to 3  CM     Compression method
+            bits 4 to 7  CINFO  Compression info
+
+      CM (Compression method)
+         This identifies the compression method used in the file. CM = 8
+         denotes the "deflate" compression method with a window size up
+         to 32K.  This is the method used by gzip and PNG (see
+         references [1] and [2] in Chapter 3, below, for the reference
+         documents).  CM = 15 is reserved.  It might be used in a future
+         version of this specification to indicate the presence of an
+         extra field before the compressed data.
+
+      CINFO (Compression info)
+         For CM = 8, CINFO is the base-2 logarithm of the LZ77 window
+         size, minus eight (CINFO=7 indicates a 32K window size). Values
+         of CINFO above 7 are not allowed in this version of the
+         specification.  CINFO is not defined in this specification for
+         CM not equal to 8.
+
+      FLG (FLaGs)
+         This flag byte is divided as follows:
+
+            bits 0 to 4  FCHECK  (check bits for CMF and FLG)
+            bit  5       FDICT   (preset dictionary)
+            bits 6 to 7  FLEVEL  (compression level)
+
+         The FCHECK value must be such that CMF and FLG, when viewed as
+         a 16-bit unsigned integer stored in MSB order (CMF*256 + FLG),
+         is a multiple of 31.
+
+
+      FDICT (Preset dictionary)
+         If FDICT is set, a DICT dictionary identifier is present
+         immediately after the FLG byte. The dictionary is a sequence of
+         bytes which are initially fed to the compressor without
+         producing any compressed output. DICT is the Adler-32 checksum
+         of this sequence of bytes (see the definition of ADLER32
+         below).  The decompressor can use this identifier to determine
+         which dictionary has been used by the compressor.
+
+      FLEVEL (Compression level)
+         These flags are available for use by specific compression
+         methods.  The "deflate" method (CM = 8) sets these flags as
+         follows:
+
+            0 - compressor used fastest algorithm
+            1 - compressor used fast algorithm
+            2 - compressor used default algorithm
+            3 - compressor used maximum compression, slowest algorithm
+
+         The information in FLEVEL is not needed for decompression; it
+         is there to indicate if recompression might be worthwhile.
+
+      compressed data
+         For compression method 8, the compressed data is stored in the
+         deflate compressed data format as described in the document
+         "DEFLATE Compressed Data Format Specification" by L. Peter
+         Deutsch. (See reference [3] in Chapter 3, below)
+
+         Other compressed data formats are not specified in this version
+         of the zlib specification.
+
+      ADLER32 (Adler-32 checksum)
+         This contains a checksum value of the uncompressed data
+         (excluding any dictionary data) computed according to Adler-32
+         algorithm. This algorithm is a 32-bit extension and improvement
+         of the Fletcher algorithm, used in the ITU-T X.224 / ISO 8073
+         standard. See references [4] and [5] in Chapter 3, below)
+
+         Adler-32 is composed of two sums accumulated per byte: s1 is
+         the sum of all bytes, s2 is the sum of all s1 values. Both sums
+         are done modulo 65521. s1 is initialized to 1, s2 to zero.  The
+         Adler-32 checksum is stored as s2*65536 + s1 in most-
+         significant-byte first (network) order.
+
+  ==> The stream can start with only 2 bytes :
+        - CM  = 0x78 : CMINFO=7 (32kB window),  CM=8 (deflate)
+        - FLG = 0x01 : FLEVEL = 0 (fastest), FDICT=0 (no dict), FCHECK=1 so
+          that 0x7801 is a multiple of 31 (30721 = 991 * 31).
+
+  ==> and it ends with only 4 bytes, the Adler-32 checksum in big-endian format.
+
+ */
+
+static const unsigned char zlib_hdr[] = { 0x78, 0x01 };   // 32k win, deflate, chk=1
+
+
+/* Original version from RFC1950, verified and works OK */
+uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
+{
+	uint32_t s1 = crc & 0xffff;
+	uint32_t s2 = (crc >> 16) & 0xffff;
+	int n;
+
+	for (n = 0; n < len; n++) {
+		s1 = (s1 + buf[n]) % 65521;
+		s2 = (s2 + s1)     % 65521;
+	}
+	return (s2 << 16) + s1;
+}
+
+/* Encodes the block according to rfc1950. This means that the CRC of the input
+ * block is computed according to the ADLER32 algorithm. The number of output
+ * bytes is returned.
+ */
+long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
+{
+	strm->crc32 = slz_adler32_by1(strm->crc32, in, ilen);
+	return slz_rfc1951_encode(strm, out, in, ilen, more);
+}
+
+/* Sends the zlib header for stream <strm> into buffer <buf>. When it's done,
+ * the stream state is updated to SLZ_ST_EOB. It returns the number of bytes
+ * emitted which is always 2. The caller is responsible for ensuring there's
+ * always enough room in the buffer.
+ */
+int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf)
+{
+	memcpy(buf, zlib_hdr, sizeof(zlib_hdr));
+	strm->state = SLZ_ST_EOB;
+	return sizeof(zlib_hdr);
+}
+
+/* Initializes stream <strm> and sends the header into <buf>. Returns the
+ * number of bytes emitted, which is always the header size (2 bytes). The
+ * caller is responsible for ensuring there's always enough room in the buffer.
+ */
+int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
+{
+	slz_rfc1951_init(strm, buf);
+	strm->crc32 = 1; // rfc1950/zlib starts with initial crc=1
+	return slz_rfc1950_send_header(strm, buf);
+}
+
+/* Flushes pending bits and sends the gzip trailer for stream <strm> into
+ * buffer <buf>. When it's done, the stream state is updated to SLZ_ST_END. It
+ * returns the number of bytes emitted. The trailer consists in flushing the
+ * possibly pending bits from the queue (up to 24 bits), rounding to the next
+ * byte, then 4 bytes for the CRC. That may abount to 4+4 = 8 bytes, that the
+ * caller must ensure are available before calling the function.
+ */
+int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf)
+{
+	strm->outbuf = buf;
+	slz_rfc1951_finish(strm, buf);
+	copy_8b(strm, (strm->crc32 >> 24) & 0xff);
+	copy_8b(strm, (strm->crc32 >> 16) & 0xff);
+	copy_8b(strm, (strm->crc32 >>  8) & 0xff);
+	copy_8b(strm, (strm->crc32 >>  0) & 0xff);
+	strm->state = SLZ_ST_END;
+	return strm->outbuf - buf;
+}

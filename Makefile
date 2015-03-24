@@ -17,7 +17,7 @@ USR_LFLAGS :=
 LIB_LFLAGS := -L$(EBTREE_DIR)
 LDFLAGS    := $(DEB_LFLAGS) $(USR_LFLAGS) $(LIB_LFLAGS)
 
-BINS       := exp-lm rfc1952 zdec
+BINS       := exp-lm rfc1952 rfc1950 zdec
 OBJS       :=
 OBJS       += $(patsubst %.c,%.o,$(wildcard src/*.c))
 OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
@@ -25,6 +25,9 @@ OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
 all: $(BINS)
 
 exp-lm: src/exp-lm.o
+	$(LD) $(LDFLAGS) -o $@ $^
+
+rfc1950: src/rfc1950.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 rfc1952: src/rfc1952.o src/slz.o
