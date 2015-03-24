@@ -1317,21 +1317,19 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len)
 	return (s2 << 16) + s1;
 }
 
-/* warning, counter s2 may overflow if fed with more than about 2^28 bytes in
- * a single call (2^(64-8)/2), since s2 may contain about len*len*255 (in fact
- * more like len*len/2*255).
- */
+/* Computes the adler32 sum on <buf> for <len> bytes. */
 uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 {
-	uint64_t s1 = crc & 0xffff;
-	uint64_t s2 = (crc >> 16);
+	long s1 = crc & 0xffff;
+	long s2 = (crc >> 16);
 	long blk;
 	long n;
 
 	do {
 		blk = len;
-		if (blk > 1U << 28)
-			blk = 1U << 28;
+		/* ensure we never overflow s2 (limit is about 2^((32-8)/2) */
+		if (blk > (1U << 12))
+			blk = 1U << 12;
 		len -= blk;
 
 		for (n = 0; n < blk; n++) {
@@ -1340,6 +1338,7 @@ uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 		}
 		s1 %= 65521;
 		s2 %= 65521;
+		buf += blk;
 	} while (len);
 	return (s2 << 16) + s1;
 }
