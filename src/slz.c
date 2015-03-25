@@ -368,10 +368,11 @@ static uint32_t dist_to_code(uint32_t l)
 	return code;
 }
 
-/* enqueue code x of <xbits> bits (LSB aligned) and copy complete bytes into.
- * out buf. X must not contain non-zero bits above xbits.
+/* enqueue code x of <xbits> bits (LSB aligned, at most 16) and copy complete
+ * bytes into out buf. X must not contain non-zero bits above xbits. Prefer
+ * enqueue8() when xbits is known for being 8 or less.
  */
-static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
+static void enqueue16(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 {
 	uint32_t queue = strm->queue + (x << strm->qbits);
 	uint32_t qbits = strm->qbits + xbits;
@@ -398,6 +399,24 @@ static void enqueue(struct slz_stream *strm, uint32_t x, uint32_t xbits)
 	strm->outbuf += 2;
 	queue >>= 16;
 	qbits -= 16;
+	strm->qbits = qbits;
+	strm->queue = queue;
+}
+
+/* enqueue code x of <xbits> bits (at most 8) and copy complete bytes into
+ * out buf. X must not contain non-zero bits above xbits.
+ */
+static inline void enqueue8(struct slz_stream *strm, uint32_t x, uint32_t xbits)
+{
+	uint32_t queue = strm->queue + (x << strm->qbits);
+	uint32_t qbits = strm->qbits + xbits;
+
+	if (__builtin_expect((signed)(qbits - 8) >= 0, 1)) {
+		qbits -= 8;
+		*strm->outbuf++ = queue;
+		queue >>= 8;
+	}
+
 	strm->qbits = qbits;
 	strm->queue = queue;
 }
@@ -443,7 +462,7 @@ static inline void send_huff(struct slz_stream *strm, uint32_t code)
 	code = fixed_huff[code];
 	bits = code & 15;
 	code >>= 4;
-	enqueue(strm, code, bits);
+	enqueue16(strm, code, bits);
 }
 
 static inline void send_eob(struct slz_stream *strm)
@@ -467,7 +486,7 @@ static unsigned int copy_lit(struct slz_stream *strm, const void *buf, int len, 
 
 	strm->state = more ? SLZ_ST_EOB : SLZ_ST_DONE;
 
-	enqueue(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
+	enqueue8(strm, !more, 3); // BFINAL = !more ; BTYPE = 00
 	flush_bits(strm);
 	copy_16b(strm, len);  // len
 	copy_16b(strm, ~len); // nlen
@@ -490,7 +509,7 @@ static unsigned int copy_lit_huff(struct slz_stream *strm, const unsigned char *
 	if (strm->state == SLZ_ST_EOB) {
 	eob:
 		strm->state = more ? SLZ_ST_FIXED : SLZ_ST_LAST;
-		enqueue(strm, 2 + !more, 3); // BFINAL = !more ; BTYPE = 01
+		enqueue8(strm, 2 + !more, 3); // BFINAL = !more ; BTYPE = 01
 	}
 	else if (!more) {
 		send_eob(strm);
@@ -763,14 +782,14 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 		/* use mode 01 - fixed huffman */
 		if (strm->state == SLZ_ST_EOB) {
 			strm->state = SLZ_ST_FIXED;
-			enqueue(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
+			enqueue8(strm, 0x02, 3); // BTYPE = 01, BFINAL = 0
 		}
 
 		/* copy the length first */
-		enqueue(strm, code & 0xFFFF, code >> 16);
+		enqueue16(strm, code & 0xFFFF, code >> 16);
 
 		/* in fixed huffman mode, dist is fixed 5 bits */
-		enqueue(strm, dist >> 5, dist & 0x1f);
+		enqueue16(strm, dist >> 5, dist & 0x1f);
 		bit9 = 0;
 		rem -= mlen;
 		pos += mlen;
@@ -837,7 +856,7 @@ int slz_rfc1951_finish(struct slz_stream *strm, unsigned char *buf)
 
 	if (strm->state != SLZ_ST_DONE) {
 		/* send BTYPE=1, BFINAL=1 */
-		enqueue(strm, 3, 3);
+		enqueue8(strm, 3, 3);
 		send_eob(strm);
 		strm->state = SLZ_ST_DONE;
 	}
