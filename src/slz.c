@@ -663,6 +663,14 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	uint32_t dist, code;
 	uint64_t refs[1 << HASH_BITS];
 
+	if (!strm->level) {
+		/* force to send as literals (eg to preserve CPU) */
+		strm->outbuf = out;
+		plit = pos = ilen;
+		bit9 = 52; /* force literal dump */
+		goto final_lit_dump;
+	}
+
 	reset_refs(refs, sizeof(refs));
 
 	strm->outbuf = out;
@@ -811,6 +819,7 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 		} while (--rem);
 	}
 
+ final_lit_dump:
 	/* now copy remaining literals or mark the end */
 	while (plit) {
 		if (bit9 >= 52)
@@ -831,6 +840,7 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->state = SLZ_ST_INIT;
+	strm->level = 1;
 	strm->crc32 = 0;
 	strm->ilen  = 0;
 	strm->qbits = 0;
