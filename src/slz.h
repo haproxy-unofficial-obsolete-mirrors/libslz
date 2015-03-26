@@ -77,9 +77,12 @@ int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf);
  * configure the stream to use format <format> for the data, which must be one
  * of SLZ_FMT_*. It returns the number of bytes emitted, which is always the
  * header size (0, 2, or 10 bytes). The caller is responsible for ensuring
- * there's always enough room in the buffer.
+ * there's always enough room in the buffer. The compression level passed in
+ * <level> is set. This value can only be 0 (no compression) or 1 (compression)
+ * and other values will lead to unpredictable behaviour.
  */
-static inline int slz_init(struct slz_stream *strm, int format, unsigned char *buf)
+static inline int slz_init(struct slz_stream *strm, int level, int format,
+                           unsigned char *buf)
 {
 	int ret;
 
@@ -91,6 +94,7 @@ static inline int slz_init(struct slz_stream *strm, int format, unsigned char *b
 		ret = slz_rfc1951_init(strm, buf);
 		strm->format = format;
 	}
+	strm->level = level;
 	return ret;
 }
 
