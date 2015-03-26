@@ -15,15 +15,12 @@ USR_LFLAGS :=
 LIB_LFLAGS :=
 LDFLAGS    := $(DEB_LFLAGS) $(USR_LFLAGS) $(LIB_LFLAGS)
 
-BINS       := exp-lm rfc1952 rfc1950 rfc1951 zdec zenc
+BINS       := rfc1952 rfc1950 rfc1951 zdec zenc
 OBJS       :=
 OBJS       += $(patsubst %.c,%.o,$(wildcard src/*.c))
 OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
 
 all: $(BINS)
-
-exp-lm: src/exp-lm.o
-	$(LD) $(LDFLAGS) -o $@ $^
 
 rfc1950: src/rfc1950.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
