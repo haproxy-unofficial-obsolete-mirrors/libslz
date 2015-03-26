@@ -36,6 +36,7 @@ __attribute__((noreturn)) void usage(const char *name, int code)
 	    "  -1         enable compression [default]\n"
 	    "  -b <size>  only use <size> bytes from the input file\n"
 	    "  -c         send output to stdout [default]\n"
+	    "  -f         force sending output to a terminal\n"
 	    "  -h         display this help\n"
 	    "  -l <loops> loop <loops> times over the same file\n"
 	    "  -t         test mode: do not emit anything\n"
@@ -70,6 +71,7 @@ int main(int argc, char **argv)
 	int verbose = 0;
 	int test    = 0;
 	int format  = SLZ_FMT_GZIP;
+	int force   = 0;
 	int fd = 0;
 
 	argv++;
@@ -95,6 +97,9 @@ int main(int argc, char **argv)
 
 		else if (strcmp(argv[0], "-c") == 0)
 			console = 1;
+
+		else if (strcmp(argv[0], "-f") == 0)
+			force = 1;
 
 		else if (strcmp(argv[0], "-h") == 0)
 			usage(name, 0);
@@ -137,6 +142,9 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (isatty(1) && !force)
+		die(1, "Use -f if you really want to send compressed data to a terminal, or -h for help.\n");
+
 	slz_make_crc_table();
 	slz_prepare_dist_table();
 
@@ -149,7 +157,7 @@ int main(int argc, char **argv)
 		/* size of zero means stat the file */
 		bufsize = instat.st_size;
 		if (bufsize <= 0)
-			die(1, "Cannot determine input size\n");
+			die(1, "Cannot determine input size, use -b to force it.\n");
 
 		buflen = bufsize;
 		bufsize = (bufsize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
