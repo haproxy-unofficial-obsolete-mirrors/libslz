@@ -34,7 +34,9 @@ struct slz_stream {
 	uint32_t queue; /* last pending bits, LSB first */
 	uint32_t qbits; /* number of bits in queue, < 8 */
 	unsigned char *outbuf; /* set by encode() */
-	enum slz_state state;
+	uint16_t state; /* one of slz_state */
+	uint8_t unused0; /* unused for now */
+	uint8_t unused1; /* unused for now */
 	uint32_t crc32;
 	uint32_t ilen;
 };
