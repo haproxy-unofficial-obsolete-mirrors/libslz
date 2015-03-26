@@ -30,12 +30,19 @@ enum slz_state {
 	SLZ_ST_END    /* end sent (BFINAL, EOB, CRC + len) */
 };
 
+enum {
+	SLZ_FMT_GZIP,    /* RFC1952: gzip envelope and crc32 for CRC */
+	SLZ_FMT_ZLIB,    /* RFC1950: zlib envelope and adler-32 for CRC */
+	SLZ_FMT_DEFLATE, /* RFC1951: raw deflate, and no crc */
+};
+
 struct slz_stream {
 	uint32_t queue; /* last pending bits, LSB first */
 	uint32_t qbits; /* number of bits in queue, < 8 */
 	unsigned char *outbuf; /* set by encode() */
 	uint16_t state; /* one of slz_state */
 	uint8_t level:1; /* 0 = no compression, 1 = compression */
+	uint8_t format:2; /* SLZ_FMT_* */
 	uint8_t unused1; /* unused for now */
 	uint32_t crc32;
 	uint32_t ilen;
@@ -63,5 +70,69 @@ long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsig
 int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf);
 int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf);
 int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf);
+
+/* generic functions */
+
+/* Initializes stream <strm> and sends the header into <buf> if needed. It will
+ * configure the stream to use format <format> for the data, which must be one
+ * of SLZ_FMT_*. It returns the number of bytes emitted, which is always the
+ * header size (0, 2, or 10 bytes). The caller is responsible for ensuring
+ * there's always enough room in the buffer.
+ */
+static inline int slz_init(struct slz_stream *strm, int format, unsigned char *buf)
+{
+	int ret;
+
+	if (format == SLZ_FMT_GZIP)
+		ret = slz_rfc1952_init(strm, buf);
+	else if (format == SLZ_FMT_ZLIB)
+		ret = slz_rfc1950_init(strm, buf);
+	else { /* deflate for anything else */
+		ret = slz_rfc1951_init(strm, buf);
+		strm->format = format;
+	}
+	return ret;
+}
+
+/* Encodes the block according to the format used by the stream. This means
+ * that the CRC of the input block may be computed according to the CRC32 or
+ * adler-32 algorithms. The number of output bytes is returned.
+ */
+static inline long slz_encode(struct slz_stream *strm, unsigned char *out,
+                              const unsigned char *in, long ilen, int more)
+{
+	long ret;
+
+	if (strm->format == SLZ_FMT_GZIP)
+		ret = slz_rfc1952_encode(strm, out, in, ilen, more);
+	else if (strm->format == SLZ_FMT_ZLIB)
+		ret = slz_rfc1950_encode(strm, out, in, ilen, more);
+	else /* deflate for other ones */
+		ret = slz_rfc1951_encode(strm, out, in, ilen, more);
+
+	return ret;
+}
+
+/* Flushes pending bits and sends the trailer for stream <strm> into buffer
+ * <buf> if needed. When it's done, the stream state is updated to SLZ_ST_END.
+ * It returns the number of bytes emitted. The trailer consists in flushing the
+ * possibly pending bits from the queue (up to 24 bits), rounding to the next
+ * byte, then 4 bytes for the CRC when doing zlib/gzip, then another 4 bytes
+ * for the input length for gzip. That may abount to 4+4+4 = 12 bytes, that the
+ * caller must ensure are available before calling the function.
+ */
+static inline int slz_finish(struct slz_stream *strm, unsigned char *buf)
+{
+	int ret;
+
+	if (strm->format == SLZ_FMT_GZIP)
+		ret = slz_rfc1952_finish(strm, buf);
+	else if (strm->format == SLZ_FMT_ZLIB)
+		ret = slz_rfc1950_finish(strm, buf);
+	else /* deflate for other ones */
+		ret = slz_rfc1951_finish(strm, buf);
+
+	return ret;
+}
 
 #endif

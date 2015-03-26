@@ -841,6 +841,7 @@ int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->state = SLZ_ST_INIT;
 	strm->level = 1;
+	strm->format = SLZ_FMT_DEFLATE;
 	strm->crc32 = 0;
 	strm->ilen  = 0;
 	strm->qbits = 0;
@@ -1190,6 +1191,7 @@ int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf)
 int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf)
 {
 	slz_rfc1951_init(strm, buf);
+	strm->format = SLZ_FMT_GZIP;
 	return slz_rfc1952_send_header(strm, buf);
 }
 
@@ -1428,6 +1430,7 @@ int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf)
 int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
 {
 	slz_rfc1951_init(strm, buf);
+	strm->format = SLZ_FMT_ZLIB;
 	strm->crc32 = 1; // rfc1950/zlib starts with initial crc=1
 	return slz_rfc1950_send_header(strm, buf);
 }
