@@ -15,7 +15,7 @@ USR_LFLAGS :=
 LIB_LFLAGS :=
 LDFLAGS    := $(DEB_LFLAGS) $(USR_LFLAGS) $(LIB_LFLAGS)
 
-BINS       := exp-lm rfc1952 rfc1950 rfc1951 zdec
+BINS       := exp-lm rfc1952 rfc1950 rfc1951 zdec zenc
 OBJS       :=
 OBJS       += $(patsubst %.c,%.o,$(wildcard src/*.c))
 OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
@@ -35,6 +35,9 @@ rfc1952: src/rfc1952.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 zdec: src/zdec.o
+	$(LD) $(LDFLAGS) -o $@ $^
+
+zenc: src/zenc.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
