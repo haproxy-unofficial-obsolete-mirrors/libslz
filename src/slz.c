@@ -609,33 +609,34 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 #endif
 }
 
-/* sets <count> bytes to 0xff in <refs>. <count> must be a multiple of 16 longs
- * and <refs> must be at least one count in length. It's supposed to be applied
- * to 64-bit aligned data exclusively, which makes it slightly faster than the
- * regular memset() since no alignment check is performed.
+/* sets <count> bytes to -32769 in <refs> so that any uninitialized entry will
+ * verify (pos-last-1 >= 32768) and be ignored. <count> must be a multiple of
+ * 16 longs and <refs> must be at least one count in length. It's supposed to
+ * be applied to 64-bit aligned data exclusively, which makes it slightly
+ * faster than the regular memset() since no alignment check is performed.
  */
-static void reset_refs(uint64_t *refs, long count)
+void reset_refs(uint64_t *refs, long count)
 {
 	long *dest = (void *)refs;
 	long *end  = (void *)dest + count;
 
 	do {
-		dest[ 0] = -1;
-		dest[ 1] = -1;
-		dest[ 2] = -1;
-		dest[ 3] = -1;
-		dest[ 4] = -1;
-		dest[ 5] = -1;
-		dest[ 6] = -1;
-		dest[ 7] = -1;
-		dest[ 8] = -1;
-		dest[ 9] = -1;
-		dest[10] = -1;
-		dest[11] = -1;
-		dest[12] = -1;
-		dest[13] = -1;
-		dest[14] = -1;
-		dest[15] = -1;
+		dest[ 0] = -32769;
+		dest[ 1] = -32769;
+		dest[ 2] = -32769;
+		dest[ 3] = -32769;
+		dest[ 4] = -32769;
+		dest[ 5] = -32769;
+		dest[ 6] = -32769;
+		dest[ 7] = -32769;
+		dest[ 8] = -32769;
+		dest[ 9] = -32769;
+		dest[10] = -32769;
+		dest[11] = -32769;
+		dest[12] = -32769;
+		dest[13] = -32769;
+		dest[14] = -32769;
+		dest[15] = -32769;
 		dest += 16;
 	} while (dest < end);
 }
