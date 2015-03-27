@@ -706,31 +706,33 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 		 * A non-colliding hash gives 33025 instead of 35662 (-7.4%),
 		 * and keeping the last two entries gives 31724 (-11.0%).
 		 */
+		unsigned long scan;
 		int saved = 0;
 		int bestpos = 0;
 		int bestlen = 0;
 		int firstlen = 0;
 		int max_lookup = 2; // 0 = no limit
 
-		/* last<pos checks for overflow */
-		for (last = pos - 1; last < pos && pos - last < 32768; last--) {
-			if (*(uint32_t *)(in + last) != word)
+		for (scan = pos - 1; scan < pos && (unsigned long)(pos - scan - 1) < 32768; scan--) {
+			if (*(uint32_t *)(in + scan) != word)
 				continue;
 
-			len = memmatch(in + pos, in + last, rem);
+			len = memmatch(in + pos, in + scan, rem);
 			if (!bestlen)
 				firstlen = len;
 
 			if (len > bestlen) {
 				bestlen = len;
-				bestpos = last;
-				ent = word;
+				bestpos = scan;
 			}
 			if (!--max_lookup)
 				break;
 		}
 		if (bestlen) {
+			//printf("pos=%d last=%d bestpos=%d word=%08x ent=%08x len=%d\n",
+			//       (int)pos, (int)last, (int)bestpos, (int)word, (int)ent, bestlen);
 			last = bestpos;
+			ent  = word;
 			saved += bestlen - firstlen;
 		}
 		//fprintf(stderr, "first=%d best=%d saved_total=%d\n", firstlen, bestlen, saved);
