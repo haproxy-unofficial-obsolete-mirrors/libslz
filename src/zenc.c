@@ -12,6 +12,11 @@
 #include <fcntl.h>
 #include "slz.h"
 
+/* some platforms do not provide PAGE_SIZE */
+#ifndef PAGE_SIZE
+#define PAGE_SIZE sysconf(_SC_PAGESIZE)
+#endif
+
 /* block size for experimentations */
 #define BLK 32768
 
