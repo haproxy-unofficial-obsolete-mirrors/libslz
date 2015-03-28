@@ -1165,16 +1165,6 @@ static inline uint32_t update_crc(uint32_t crc, const void *buf, int len)
 	return slz_crc32_by4(crc, buf, len);
 }
 
-/* Encodes the block according to rfc1952. This means that the CRC of the input
- * block is computed according to the CRC32 algorithm. The number of output bytes
- * is returned.
- */
-long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
-{
-	strm->crc32 = update_crc(strm->crc32, in, ilen);
-	return slz_rfc1951_encode(strm, out, in, ilen, more);
-}
-
 /* Sends the gzip header for stream <strm> into buffer <buf>. When it's done,
  * the stream state is updated to SLZ_ST_EOB. It returns the number of bytes
  * emitted which is always 10. The caller is responsible for ensuring there's
@@ -1185,6 +1175,22 @@ int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf)
 	memcpy(buf, gzip_hdr, sizeof(gzip_hdr));
 	strm->state = SLZ_ST_EOB;
 	return sizeof(gzip_hdr);
+}
+
+/* Encodes the block according to rfc1952. This means that the CRC of the input
+ * block is computed according to the CRC32 algorithm. If the header was never
+ * sent, it may be sent first. The number of output bytes is returned.
+ */
+long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
+{
+	long ret = 0;
+
+	if (__builtin_expect(strm->state == SLZ_ST_INIT, 0))
+		ret += slz_rfc1952_send_header(strm, out);
+
+	strm->crc32 = update_crc(strm->crc32, in, ilen);
+	ret += slz_rfc1951_encode(strm, out + ret, in, ilen, more);
+	return ret;
 }
 
 /* Initializes stream <strm> and sends the header into <buf>. Returns the
@@ -1209,13 +1215,17 @@ int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf)
  * possibly pending bits from the queue (up to 24 bits), rounding to the next
  * byte, then 4 bytes for the CRC and another 4 bytes for the input length.
  * That may abount to 4+4+4 = 12 bytes, that the caller must ensure are
- * available before calling the function.
+ * available before calling the function. Note that if the initial header was
+ * never sent, it will be sent first as well (10 extra bytes).
  */
 int slz_rfc1952_finish(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->outbuf = buf;
 
-	slz_rfc1951_finish(strm, buf);
+	if (__builtin_expect(strm->state == SLZ_ST_INIT, 0))
+		strm->outbuf += slz_rfc1952_send_header(strm, strm->outbuf);
+
+	slz_rfc1951_finish(strm, strm->outbuf);
 	copy_32b(strm, strm->crc32);
 	copy_32b(strm, strm->ilen);
 	strm->state = SLZ_ST_END;
@@ -1409,16 +1419,6 @@ uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len)
 	return (s2 << 16) + s1;
 }
 
-/* Encodes the block according to rfc1950. This means that the CRC of the input
- * block is computed according to the ADLER32 algorithm. The number of output
- * bytes is returned.
- */
-long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
-{
-	strm->crc32 = slz_adler32_block(strm->crc32, in, ilen);
-	return slz_rfc1951_encode(strm, out, in, ilen, more);
-}
-
 /* Sends the zlib header for stream <strm> into buffer <buf>. When it's done,
  * the stream state is updated to SLZ_ST_EOB. It returns the number of bytes
  * emitted which is always 2. The caller is responsible for ensuring there's
@@ -1429,6 +1429,22 @@ int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf)
 	memcpy(buf, zlib_hdr, sizeof(zlib_hdr));
 	strm->state = SLZ_ST_EOB;
 	return sizeof(zlib_hdr);
+}
+
+/* Encodes the block according to rfc1950. This means that the CRC of the input
+ * block is computed according to the ADLER32 algorithm. If the header was never
+ * sent, it may be sent first. The number of output bytes is returned.
+ */
+long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more)
+{
+	long ret = 0;
+
+	if (__builtin_expect(strm->state == SLZ_ST_INIT, 0))
+		ret += slz_rfc1950_send_header(strm, out);
+
+	strm->crc32 = slz_adler32_block(strm->crc32, in, ilen);
+	ret += slz_rfc1951_encode(strm, out + ret, in, ilen, more);
+	return ret;
 }
 
 /* Initializes stream <strm> and sends the header into <buf>. Returns the
@@ -1452,12 +1468,18 @@ int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
  * returns the number of bytes emitted. The trailer consists in flushing the
  * possibly pending bits from the queue (up to 24 bits), rounding to the next
  * byte, then 4 bytes for the CRC. That may abount to 4+4 = 8 bytes, that the
- * caller must ensure are available before calling the function.
+ * caller must ensure are available before calling the function. Note that if
+ * the initial header was never sent, it will be sent first as well (2 extra
+ * bytes).
  */
 int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf)
 {
 	strm->outbuf = buf;
-	slz_rfc1951_finish(strm, buf);
+
+	if (__builtin_expect(strm->state == SLZ_ST_INIT, 0))
+		strm->outbuf += slz_rfc1952_send_header(strm, strm->outbuf);
+
+	slz_rfc1951_finish(strm, strm->outbuf);
 	copy_8b(strm, (strm->crc32 >> 24) & 0xff);
 	copy_8b(strm, (strm->crc32 >> 16) & 0xff);
 	copy_8b(strm, (strm->crc32 >>  8) & 0xff);
