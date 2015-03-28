@@ -22,11 +22,16 @@ OBJS       += $(patsubst %.S,%.o,$(wildcard src/*.S))
 
 all: $(BINS)
 
+static: libslz.a
+
 zdec: src/zdec.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 zenc: src/zenc.o src/slz.o
 	$(LD) $(LDFLAGS) -o $@ $^
+
+libslz.a: src/slz.o
+	$(AR) rv $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $^
