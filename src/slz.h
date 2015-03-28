@@ -51,7 +51,7 @@ struct slz_stream {
 /* Functions specific to rfc1951 (deflate) */
 void slz_prepare_dist_table();
 long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
-int slz_rfc1951_init(struct slz_stream *strm);
+int slz_rfc1951_init(struct slz_stream *strm, int level);
 int slz_rfc1951_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* Functions specific to rfc1952 (gzip) */
@@ -60,7 +60,7 @@ uint32_t slz_crc32_by1(uint32_t crc, const unsigned char *buf, int len);
 uint32_t slz_crc32_by4(uint32_t crc, const unsigned char *buf, int len);
 long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
 int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf);
-int slz_rfc1952_init(struct slz_stream *strm);
+int slz_rfc1952_init(struct slz_stream *strm, int level);
 int slz_rfc1952_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* Functions specific to rfc1950 (zlib) */
@@ -68,7 +68,7 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len);
 uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len);
 long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
 int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf);
-int slz_rfc1950_init(struct slz_stream *strm);
+int slz_rfc1950_init(struct slz_stream *strm, int level);
 int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* generic functions */
@@ -84,14 +84,13 @@ static inline int slz_init(struct slz_stream *strm, int level, int format)
 	int ret;
 
 	if (format == SLZ_FMT_GZIP)
-		ret = slz_rfc1952_init(strm);
+		ret = slz_rfc1952_init(strm, level);
 	else if (format == SLZ_FMT_ZLIB)
-		ret = slz_rfc1950_init(strm);
+		ret = slz_rfc1950_init(strm, level);
 	else { /* deflate for anything else */
-		ret = slz_rfc1951_init(strm);
+		ret = slz_rfc1951_init(strm, level);
 		strm->format = format;
 	}
-	strm->level = level;
 	return ret;
 }
 
