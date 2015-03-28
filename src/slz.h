@@ -51,7 +51,7 @@ struct slz_stream {
 /* Functions specific to rfc1951 (deflate) */
 void slz_prepare_dist_table();
 long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
-int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1951_init(struct slz_stream *strm);
 int slz_rfc1951_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* Functions specific to rfc1952 (gzip) */
@@ -60,7 +60,7 @@ uint32_t slz_crc32_by1(uint32_t crc, const unsigned char *buf, int len);
 uint32_t slz_crc32_by4(uint32_t crc, const unsigned char *buf, int len);
 long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
 int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf);
-int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1952_init(struct slz_stream *strm);
 int slz_rfc1952_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* Functions specific to rfc1950 (zlib) */
@@ -68,30 +68,27 @@ uint32_t slz_adler32_by1(uint32_t crc, const unsigned char *buf, int len);
 uint32_t slz_adler32_block(uint32_t crc, const unsigned char *buf, long len);
 long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsigned char *in, long ilen, int more);
 int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf);
-int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf);
+int slz_rfc1950_init(struct slz_stream *strm);
 int slz_rfc1950_finish(struct slz_stream *strm, unsigned char *buf);
 
 /* generic functions */
 
-/* Initializes stream <strm> and sends the header into <buf> if needed. It will
- * configure the stream to use format <format> for the data, which must be one
- * of SLZ_FMT_*. It returns the number of bytes emitted, which is always the
- * header size (0, 2, or 10 bytes). The caller is responsible for ensuring
- * there's always enough room in the buffer. The compression level passed in
- * <level> is set. This value can only be 0 (no compression) or 1 (compression)
- * and other values will lead to unpredictable behaviour.
+/* Initializes stream <strm>. It will configure the stream to use format
+ * <format> for the data, which must be one of SLZ_FMT_*. The compression level
+ * passed in <level> is set. This value can only be 0 (no compression) or 1
+ * (compression) and other values will lead to unpredictable behaviour. The
+ * function should always return 0.
  */
-static inline int slz_init(struct slz_stream *strm, int level, int format,
-                           unsigned char *buf)
+static inline int slz_init(struct slz_stream *strm, int level, int format)
 {
 	int ret;
 
 	if (format == SLZ_FMT_GZIP)
-		ret = slz_rfc1952_init(strm, buf);
+		ret = slz_rfc1952_init(strm);
 	else if (format == SLZ_FMT_ZLIB)
-		ret = slz_rfc1950_init(strm, buf);
+		ret = slz_rfc1950_init(strm);
 	else { /* deflate for anything else */
-		ret = slz_rfc1951_init(strm, buf);
+		ret = slz_rfc1951_init(strm);
 		strm->format = format;
 	}
 	strm->level = level;

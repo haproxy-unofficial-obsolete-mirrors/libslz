@@ -190,9 +190,9 @@ int main(int argc, char **argv)
 	}
 
 	while (loops--) {
-		len = slz_init(&strm, level, format, outbuf);
+		slz_init(&strm, level, format);
 
-		ofs = 0;
+		len = ofs = 0;
 		do {
 			len += slz_encode(&strm, outbuf + len, buffer + ofs, (buflen - ofs) > BLK ? BLK : buflen - ofs, (buflen - ofs) > BLK);
 			if (buflen - ofs > BLK) {

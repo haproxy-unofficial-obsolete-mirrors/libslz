@@ -837,10 +837,10 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	return strm->outbuf - out;
 }
 
-/* Initializes stream <strm>. The CRC is unused but set to zero. The function
- * always returns 0.
+/* Initializes stream <strm> for use with raw deflate (rfc1951). The CRC is
+ * unused but set to zero. The function always returns 0.
  */
-int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
+int slz_rfc1951_init(struct slz_stream *strm)
 {
 	strm->state = SLZ_ST_EOB; // no header
 	strm->level = 1;
@@ -1193,11 +1193,10 @@ long slz_rfc1952_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	return ret;
 }
 
-/* Initializes stream <strm> and sends the header into <buf>. Returns the
- * number of bytes emitted, which is always the header size (10 bytes). The
- * caller is responsible for ensuring there's always enough room in the buffer.
+/* Initializes stream <strm> for use with the gzip format (rfc1952). The
+ * function always returns 0.
  */
-int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf)
+int slz_rfc1952_init(struct slz_stream *strm)
 {
 	strm->state  = SLZ_ST_INIT;
 	strm->level  = 1;
@@ -1206,7 +1205,7 @@ int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf)
 	strm->ilen   = 0;
 	strm->qbits  = 0;
 	strm->queue  = 0;
-	return slz_rfc1952_send_header(strm, buf);
+	return 0;
 }
 
 /* Flushes pending bits and sends the gzip trailer for stream <strm> into
@@ -1447,11 +1446,10 @@ long slz_rfc1950_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	return ret;
 }
 
-/* Initializes stream <strm> and sends the header into <buf>. Returns the
- * number of bytes emitted, which is always the header size (2 bytes). The
- * caller is responsible for ensuring there's always enough room in the buffer.
+/* Initializes stream <strm> for use with the zlib format (rfc1952). The
+ * function always returns 0.
  */
-int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
+int slz_rfc1950_init(struct slz_stream *strm)
 {
 	strm->state  = SLZ_ST_INIT;
 	strm->level  = 1;
@@ -1460,7 +1458,7 @@ int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
 	strm->ilen   = 0;
 	strm->qbits  = 0;
 	strm->queue  = 0;
-	return slz_rfc1950_send_header(strm, buf);
+	return 0;
 }
 
 /* Flushes pending bits and sends the gzip trailer for stream <strm> into
