@@ -837,12 +837,12 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	return strm->outbuf - out;
 }
 
-/* Initializes stream <strm>. The CRC is set to zero, as requested by gzip.
- * For zlib, it must be set to 1. The function always returns 0.
+/* Initializes stream <strm>. The CRC is unused but set to zero. The function
+ * always returns 0.
  */
 int slz_rfc1951_init(struct slz_stream *strm, unsigned char *buf)
 {
-	strm->state = SLZ_ST_INIT;
+	strm->state = SLZ_ST_EOB; // no header
 	strm->level = 1;
 	strm->format = SLZ_FMT_DEFLATE;
 	strm->crc32 = 0;
@@ -1193,8 +1193,13 @@ int slz_rfc1952_send_header(struct slz_stream *strm, unsigned char *buf)
  */
 int slz_rfc1952_init(struct slz_stream *strm, unsigned char *buf)
 {
-	slz_rfc1951_init(strm, buf);
+	strm->state  = SLZ_ST_INIT;
+	strm->level  = 1;
 	strm->format = SLZ_FMT_GZIP;
+	strm->crc32  = 0;
+	strm->ilen   = 0;
+	strm->qbits  = 0;
+	strm->queue  = 0;
 	return slz_rfc1952_send_header(strm, buf);
 }
 
@@ -1432,9 +1437,13 @@ int slz_rfc1950_send_header(struct slz_stream *strm, unsigned char *buf)
  */
 int slz_rfc1950_init(struct slz_stream *strm, unsigned char *buf)
 {
-	slz_rfc1951_init(strm, buf);
+	strm->state  = SLZ_ST_INIT;
+	strm->level  = 1;
 	strm->format = SLZ_FMT_ZLIB;
-	strm->crc32 = 1; // rfc1950/zlib starts with initial crc=1
+	strm->crc32  = 1; // rfc1950/zlib starts with initial crc=1
+	strm->ilen   = 0;
+	strm->qbits  = 0;
+	strm->queue  = 0;
 	return slz_rfc1950_send_header(strm, buf);
 }
 
