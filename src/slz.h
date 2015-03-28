@@ -98,8 +98,8 @@ static inline int slz_init(struct slz_stream *strm, int level, int format)
  * that the CRC of the input block may be computed according to the CRC32 or
  * adler-32 algorithms. The number of output bytes is returned.
  */
-static inline long slz_encode(struct slz_stream *strm, unsigned char *out,
-                              const unsigned char *in, long ilen, int more)
+static inline long slz_encode(struct slz_stream *strm, void *out,
+                              const void *in, long ilen, int more)
 {
 	long ret;
 
@@ -121,7 +121,7 @@ static inline long slz_encode(struct slz_stream *strm, unsigned char *out,
  * for the input length for gzip. That may abount to 4+4+4 = 12 bytes, that the
  * caller must ensure are available before calling the function.
  */
-static inline int slz_finish(struct slz_stream *strm, unsigned char *buf)
+static inline int slz_finish(struct slz_stream *strm, void *buf)
 {
 	int ret;
 
