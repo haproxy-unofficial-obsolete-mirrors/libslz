@@ -2,7 +2,9 @@ TOPDIR     := $(PWD)
 DESTDIR    :=
 PREFIX     := /usr/local
 
-CC         := gcc
+CROSS_COMPILE :=
+
+CC         := $(CROSS_COMPILE)gcc
 OPT_CFLAGS := -O3
 CPU_CFLAGS := -fomit-frame-pointer -DCONFIG_REGPARM=3
 DEB_CFLAGS := -Wall -g
@@ -17,7 +19,8 @@ USR_LFLAGS :=
 LIB_LFLAGS :=
 LDFLAGS    := $(DEB_LFLAGS) $(USR_LFLAGS) $(LIB_LFLAGS)
 
-STRIP      := strip
+AR         := $(CROSS_COMPILE)ar
+STRIP      := $(CROSS_COMPILE)strip
 BINS       := zdec zenc
 STATIC     := libslz.a
 OBJS       :=
