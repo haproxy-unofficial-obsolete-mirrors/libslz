@@ -344,6 +344,15 @@ static const uint32_t len_fh[259] = {
 static uint32_t crc32_fast[4][256];
 static uint32_t fh_dist_table[32768];
 
+/* back references, built in a way that is optimal for 32/64 bits */
+union ref {
+	struct {
+		uint32_t pos;
+		uint32_t word;
+	} by32;
+	uint64_t by64;
+};
+
 /* Returns code for lengths 1 to 32768. The bit size for the next value can be
  * found this way :
  *
@@ -633,36 +642,36 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
 #endif
 }
 
-/* sets <count> bytes to -32769 in <refs> so that any uninitialized entry will
+/* sets <count> BYTES to -32769 in <refs> so that any uninitialized entry will
  * verify (pos-last-1 >= 32768) and be ignored. <count> must be a multiple of
- * 16 longs and <refs> must be at least one count in length. It's supposed to
+ * 128 bytes and <refs> must be at least one count in length. It's supposed to
  * be applied to 64-bit aligned data exclusively, which makes it slightly
  * faster than the regular memset() since no alignment check is performed.
  */
-void reset_refs(uint64_t *refs, long count)
+void reset_refs(union ref *refs, long count)
 {
-	uint64_t *dest = (void *)refs;
-	uint64_t *end  = (void *)dest + count;
+	/* avoid a shift/mask by casting to void* */
+	union ref *end = (void *)refs + count;
 
 	do {
-		dest[ 0] = -32769;
-		dest[ 1] = -32769;
-		dest[ 2] = -32769;
-		dest[ 3] = -32769;
-		dest[ 4] = -32769;
-		dest[ 5] = -32769;
-		dest[ 6] = -32769;
-		dest[ 7] = -32769;
-		dest[ 8] = -32769;
-		dest[ 9] = -32769;
-		dest[10] = -32769;
-		dest[11] = -32769;
-		dest[12] = -32769;
-		dest[13] = -32769;
-		dest[14] = -32769;
-		dest[15] = -32769;
-		dest += 16;
-	} while (dest < end);
+		refs[ 0].by64 = -32769;
+		refs[ 1].by64 = -32769;
+		refs[ 2].by64 = -32769;
+		refs[ 3].by64 = -32769;
+		refs[ 4].by64 = -32769;
+		refs[ 5].by64 = -32769;
+		refs[ 6].by64 = -32769;
+		refs[ 7].by64 = -32769;
+		refs[ 8].by64 = -32769;
+		refs[ 9].by64 = -32769;
+		refs[10].by64 = -32769;
+		refs[11].by64 = -32769;
+		refs[12].by64 = -32769;
+		refs[13].by64 = -32769;
+		refs[14].by64 = -32769;
+		refs[15].by64 = -32769;
+		refs += 16;
+	} while (refs < end);
 }
 
 /* Compresses <ilen> bytes from <in> into <out> according to RFC1951. The
@@ -686,7 +695,7 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 	uint32_t plit = 0;
 	uint32_t bit9 = 0;
 	uint32_t dist, code;
-	uint64_t refs[1 << HASH_BITS];
+	union ref refs[1 << HASH_BITS];
 
 	if (!strm->level) {
 		/* force to send as literals (eg to preserve CPU) */
@@ -711,10 +720,18 @@ long slz_rfc1951_encode(struct slz_stream *strm, unsigned char *out, const unsig
 #endif
 		h = slz_hash(word);
 		asm volatile ("" ::); // prevent gcc from trying to be smart with the prefetch
-		ent = refs[h];
-		last = (uint32_t)ent;
-		ent >>= 32;
-		refs[h] = ((uint64_t)pos) + ((uint64_t)word << 32);
+
+		if (sizeof(long) >= 8) {
+			ent = refs[h].by64;
+			last = (uint32_t)ent;
+			ent >>= 32;
+			refs[h].by64 = ((uint64_t)pos) + ((uint64_t)word << 32);
+		} else {
+			ent  = refs[h].by32.word;
+			last = refs[h].by32.pos;
+			refs[h].by32.pos = pos;
+			refs[h].by32.word = word;
+		}
 
 #if FIND_OPTIMAL_MATCH
 		/* Experimental code to see what could be saved with an ideal
