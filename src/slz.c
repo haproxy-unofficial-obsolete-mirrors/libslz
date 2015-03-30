@@ -641,8 +641,8 @@ static inline long memmatch(const unsigned char *a, const unsigned char *b, long
  */
 void reset_refs(uint64_t *refs, long count)
 {
-	long *dest = (void *)refs;
-	long *end  = (void *)dest + count;
+	uint64_t *dest = (void *)refs;
+	uint64_t *end  = (void *)dest + count;
 
 	do {
 		dest[ 0] = -32769;
