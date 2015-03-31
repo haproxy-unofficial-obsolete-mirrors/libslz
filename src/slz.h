@@ -37,9 +37,12 @@
 #if defined(__x86_64__)
 #define UNALIGNED_LE_OK
 #define UNALIGNED_FASTER
-#elif defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__) || (defined(__ARMEL__) && defined(__ARM_ARCH_7A__))
+#elif defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__)
 #define UNALIGNED_LE_OK
 //#define UNALIGNED_FASTER
+#elif defined(__ARMEL__) && defined(__ARM_ARCH_7A__)
+#define UNALIGNED_LE_OK
+#define UNALIGNED_FASTER
 #endif
 
 /* Log2 of the size of the hash table used for the references table. */
