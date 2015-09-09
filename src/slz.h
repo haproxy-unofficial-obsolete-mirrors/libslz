@@ -131,11 +131,11 @@ static inline long slz_encode(struct slz_stream *strm, void *out,
 	long ret;
 
 	if (strm->format == SLZ_FMT_GZIP)
-		ret = slz_rfc1952_encode(strm, out, in, ilen, more);
+		ret = slz_rfc1952_encode(strm, (unsigned char *) out, (const unsigned char *) in, ilen, more);
 	else if (strm->format == SLZ_FMT_ZLIB)
-		ret = slz_rfc1950_encode(strm, out, in, ilen, more);
+		ret = slz_rfc1950_encode(strm, (unsigned char *) out, (const unsigned char *) in, ilen, more);
 	else /* deflate for other ones */
-		ret = slz_rfc1951_encode(strm, out, in, ilen, more);
+		ret = slz_rfc1951_encode(strm, (unsigned char *) out, (const unsigned char *) in, ilen, more);
 
 	return ret;
 }
@@ -153,11 +153,11 @@ static inline int slz_finish(struct slz_stream *strm, void *buf)
 	int ret;
 
 	if (strm->format == SLZ_FMT_GZIP)
-		ret = slz_rfc1952_finish(strm, buf);
+		ret = slz_rfc1952_finish(strm, (unsigned char *) buf);
 	else if (strm->format == SLZ_FMT_ZLIB)
-		ret = slz_rfc1950_finish(strm, buf);
+		ret = slz_rfc1950_finish(strm, (unsigned char *) buf);
 	else /* deflate for other ones */
-		ret = slz_rfc1951_finish(strm, buf);
+		ret = slz_rfc1951_finish(strm, (unsigned char *) buf);
 
 	return ret;
 }
