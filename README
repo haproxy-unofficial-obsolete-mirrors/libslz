@@ -139,7 +139,7 @@ based compressor :
   10% faster input processing thanks to the reduced cost of hashing. Attempts
   to index the repeated data were made, and caused a significant performance
   drop (about 5%) for less than 1% compression ratio improvement, so they were
-  abandonned.
+  abandoned.
 
 - longest match : the longest match measurement is very similar to an strcmp()
   call except that we count similar characters. In order to avoid this slow
